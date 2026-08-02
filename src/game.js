@@ -228,9 +228,16 @@ export class Game {
 
   _setupSceneIfNeeded() {
     if (this.scene) return
-    this.scene = new GameScene(ui.getGameCanvas())
-    this.particles = new ParticleSystem(this.scene.scene)
-    this.minimap = new Minimap(ui.getMinimapCanvas(), ARENA_RADIUS)
+    try {
+      this.scene = new GameScene(ui.getGameCanvas())
+      this.particles = new ParticleSystem(this.scene.scene)
+      this.minimap = new Minimap(ui.getMinimapCanvas(), ARENA_RADIUS)
+    } catch (e) {
+      console.error('Could not start the 3D renderer:', e)
+      ui.showScreen('menu')
+      ui.setMenuHint("This browser/device couldn't create a 3D (WebGL) context. Try updating Chrome, or check whether hardware acceleration is disabled in browser settings.")
+      throw e
+    }
   }
 
   _spawnRoundCars() {
