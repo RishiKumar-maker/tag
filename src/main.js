@@ -22,7 +22,7 @@ function readInput() {
   const drift = keys.has('Space') || keys.has('ShiftLeft') || keys.has('ShiftRight')
   return {
     throttle: (up ? 1 : 0) - (down ? 1 : 0),
-    steer: (right ? 1 : 0) - (left ? 1 : 0),
+    steer: (left ? 1 : 0) - (right ? 1 : 0),
     drift,
   }
 }
