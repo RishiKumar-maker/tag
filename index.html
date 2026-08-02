@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Drift Tag Arena</title>
+<meta name="description" content="A cozy low-poly multiplayer car tag game. Drift, dodge, and don't get caught.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<!-- MENU -->
+<section id="screen-menu" class="screen active">
+  <div class="bg-horizon" aria-hidden="true"></div>
+  <div class="glass-card menu-card">
+    <div class="drift-arc" aria-hidden="true"></div>
+    <h1 class="logo">Drift Tag <span>Arena</span></h1>
+    <p class="tagline">Cozy low-poly car tag. Drift in, don't get caught.</p>
+
+    <label class="field-label" for="input-name">Your name</label>
+    <input id="input-name" class="text-input" type="text" maxlength="16" placeholder="Racer" autocomplete="off">
+
+    <div class="menu-actions">
+      <button id="btn-create" class="btn btn-primary">Create Room</button>
+
+      <div class="join-row">
+        <input id="input-room-code" class="text-input code-input" type="text" maxlength="5" placeholder="CODE" autocomplete="off">
+        <button id="btn-join" class="btn btn-secondary">Join</button>
+      </div>
+    </div>
+
+    <div class="menu-divider"><span>or</span></div>
+    <button id="btn-practice" class="btn btn-ghost btn-wide" type="button">Practice Solo</button>
+    <p class="hint">Try the drift controls and arena on your own — no other players needed.</p>
+
+    <p class="hint" id="menu-hint"></p>
+  </div>
+  <p class="footnote">Best with a keyboard · Share a room link to play with friends</p>
+</section>
+
+<!-- LOBBY -->
+<section id="screen-lobby" class="screen">
+  <div class="bg-horizon" aria-hidden="true"></div>
+  <div class="glass-card lobby-card">
+    <h2 class="section-title">Room <span id="lobby-room-code">-----</span></h2>
+    <button id="btn-copy-link" class="btn btn-ghost btn-small">Copy invite link</button>
+
+    <div class="player-list" id="player-list" aria-live="polite"></div>
+
+    <div class="mode-select">
+      <span class="field-label">Tag mode</span>
+      <div class="segmented" id="mode-segmented">
+        <button class="segment active" data-mode="classic" type="button">Classic</button>
+        <button class="segment" data-mode="infection" type="button">Infection</button>
+      </div>
+      <p class="mode-desc" id="mode-desc">One chaser. Get tagged, you're it.</p>
+    </div>
+
+    <button id="btn-start" class="btn btn-primary">Start Round</button>
+    <p id="lobby-wait-text" class="hint hidden">Waiting for the host to start…</p>
+
+    <button id="btn-leave-lobby" class="btn btn-ghost btn-small">Leave room</button>
+  </div>
+</section>
+
+<!-- GAME -->
+<section id="screen-game" class="screen">
+  <canvas id="game-canvas"></canvas>
+
+  <div class="hud">
+    <div class="hud-top">
+      <div class="hud-pill mode-badge" id="hud-mode-badge">Classic</div>
+      <div class="hud-pill timer-pill" id="hud-timer">3:00</div>
+      <button id="btn-leave-game" class="hud-pill hud-leave" type="button" aria-label="Leave game">Leave</button>
+    </div>
+
+    <div class="status-banner" id="status-banner"></div>
+
+    <div class="minimap-wrap">
+      <canvas id="minimap" width="140" height="140"></canvas>
+    </div>
+  </div>
+</section>
+
+<!-- RESULTS -->
+<section id="screen-results" class="screen">
+  <div class="bg-horizon" aria-hidden="true"></div>
+  <div class="glass-card results-card">
+    <div class="drift-arc" aria-hidden="true"></div>
+    <h2 class="section-title" id="results-title">Round Over</h2>
+    <div class="results-list" id="results-list"></div>
+    <button id="btn-play-again" class="btn btn-primary">Play Again</button>
+    <p id="results-wait-text" class="hint hidden">Waiting for the host…</p>
+    <button id="btn-leave-results" class="btn btn-ghost btn-small">Leave room</button>
+  </div>
+</section>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
