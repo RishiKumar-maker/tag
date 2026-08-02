@@ -3,7 +3,6 @@ import { GameScene, ARENA_RADIUS } from './scene.js'
 import { ParticleSystem } from './particles.js'
 import { Minimap } from './minimap.js'
 import { Network } from './network.js'
-import { buildCar } from './carLibrary.js'
 import * as ui from './ui.js'
 import {
   PLAYER_COLORS, hexToCss, TAG_RADIUS, CHASER_IMMUNITY_MS,
@@ -83,7 +82,7 @@ export class Game {
     }
 
     net.onPlayerInfo = (info, peerId) => {
-      this.roster.set(peerId, { id: peerId, name: info.name, color: info.color, isHost: !!info.isHost, carType: info.carType || 'roadster' })
+      this.roster.set(peerId, { id: peerId, name: info.name, color: info.color, isHost: !!info.isHost })
       this._refreshLobbyUI()
     }
 
@@ -93,7 +92,7 @@ export class Game {
       this._refreshLobbyUI()
     }
 
-    net.onRoundStart = (payload) => { this._beginRound(payload) }
+    net.onRoundStart = (payload) => this._beginRound(payload)
 
     net.onCarState = (state, peerId) => {
       const car = this.cars.get(peerId)
@@ -107,7 +106,7 @@ export class Game {
 
   _myInfo() {
     const me = this.roster.get(this.localId)
-    return { name: me.name, color: me.color, isHost: this.network.isHost, carType: me.carType }
+    return { name: me.name, color: me.color, isHost: this.network.isHost }
   }
 
   _hostId() {
@@ -117,19 +116,19 @@ export class Game {
 
   // ---------------- menu ----------------
 
-  createRoom(name, carType) {
-    this._enterRoom(makeRoomCode(), true, name, carType)
+  createRoom(name) {
+    this._enterRoom(makeRoomCode(), true, name)
   }
 
-  joinRoom(name, code, carType) {
+  joinRoom(name, code) {
     if (!code) {
       ui.setMenuHint('Enter a room code first.')
       return
     }
-    this._enterRoom(code.toUpperCase(), false, name, carType)
+    this._enterRoom(code.toUpperCase(), false, name)
   }
 
-  _enterRoom(code, isHost, name, carType) {
+  _enterRoom(code, isHost, name) {
     this.localName = name || randomPlayerName()
     this.roomCode = code
     this.network.join(code, isHost)
@@ -137,7 +136,7 @@ export class Game {
 
     const color = hexToCss(PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)])
     this.roster.clear()
-    this.roster.set(this.localId, { id: this.localId, name: this.localName, color, isHost, carType: carType || 'roadster' })
+    this.roster.set(this.localId, { id: this.localId, name: this.localName, color, isHost })
     this.mode = 'classic'
 
     try {
@@ -149,7 +148,7 @@ export class Game {
     this._refreshLobbyUI()
   }
 
-  async startPractice(name, carType) {
+  startPractice(name) {
     this.network.leave() // in case a previous room connection is still open
     this.isPractice = true
     this.roundActive = true
@@ -159,12 +158,12 @@ export class Game {
     this.localId = 'practice-solo'
 
     const color = hexToCss(PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)])
-    this.roundPlayers = [{ id: this.localId, name: this.localName, color, carType: carType || 'roadster' }]
+    this.roundPlayers = [{ id: this.localId, name: this.localName, color }]
     this.chaserSet = new Set()
 
     ui.showScreen('game')
     this._setupSceneIfNeeded()
-    await this._spawnRoundCars()
+    this._spawnRoundCars()
     ui.setHudMode('Practice')
     ui.setPracticeHud(true)
     ui.setStatusBanner('Free Drive', '')
