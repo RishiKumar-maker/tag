@@ -101,6 +101,13 @@ export function setHudMode(label) {
   el('hud-mode-badge').textContent = label
 }
 
+const SPEEDO_ARC_LENGTH = 125.7
+export function setSpeedometer(fraction, displayValue) {
+  const clamped = Math.max(0, Math.min(1, fraction))
+  el('speedo-fill').style.strokeDashoffset = String(SPEEDO_ARC_LENGTH * (1 - clamped))
+  el('speedo-number').textContent = String(Math.round(displayValue))
+}
+
 export function setPracticeHud(isPractice) {
   el('hud-timer').classList.toggle('hidden', isPractice)
   el('minimap').parentElement.classList.toggle('hidden', isPractice)

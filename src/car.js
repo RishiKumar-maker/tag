@@ -1,4 +1,5 @@
 import * as THREE from '../lib/three.module.min.js'
+import { CHASER_SPEED_MULTIPLIER } from './constants.js'
 
 // Tuned constants for the arcade drift model. Feel free to nudge these.
 export const PHYSICS = {
@@ -28,6 +29,7 @@ export class Car {
     this.speed = 0
     this.isDrifting = false
     this.steerVisual = 0
+    this.isChaser = false
 
     this.input = { throttle: 0, steer: 0, drift: false }
     this.netTarget = null
@@ -65,6 +67,7 @@ export class Car {
   }
 
   setChaserVisual(isChaser, teamColorHex) {
+    this.isChaser = isChaser
     this.statusRing.visible = isChaser
     if (isChaser) this.statusRing.material.color.setHex(teamColorHex ?? 0xff8c69)
   }
@@ -77,8 +80,11 @@ export class Car {
   step(dt) {
     dt = Math.min(dt, 0.05)
     const { throttle, steer, drift } = this.input
+    const speedMult = this.isChaser ? CHASER_SPEED_MULTIPLIER : 1
+    const maxForward = PHYSICS.maxForwardSpeed * speedMult
+    const engineForce = PHYSICS.engineForce * speedMult
 
-    const speedFactor = THREE.MathUtils.clamp(Math.abs(this.speed) / PHYSICS.maxForwardSpeed, 0.15, 1)
+    const speedFactor = THREE.MathUtils.clamp(Math.abs(this.speed) / maxForward, 0.15, 1)
     this.isDrifting = !!drift && Math.abs(this.speed) > PHYSICS.driftMinSpeed
 
     const turnBoost = this.isDrifting ? PHYSICS.driftTurnBoost : 1
@@ -91,11 +97,11 @@ export class Car {
     let forwardSpeed = this.velocity.dot(this._forward)
     let lateralSpeed = this.velocity.dot(this._right)
 
-    if (throttle > 0) forwardSpeed += throttle * PHYSICS.engineForce * dt
+    if (throttle > 0) forwardSpeed += throttle * engineForce * dt
     else if (throttle < 0) forwardSpeed += throttle * PHYSICS.brakeForce * dt
 
     forwardSpeed *= Math.max(0, 1 - PHYSICS.dragCoeff * dt)
-    forwardSpeed = THREE.MathUtils.clamp(forwardSpeed, -PHYSICS.maxReverseSpeed, PHYSICS.maxForwardSpeed)
+    forwardSpeed = THREE.MathUtils.clamp(forwardSpeed, -PHYSICS.maxReverseSpeed, maxForward)
 
     const traction = this.isDrifting ? PHYSICS.driftTraction : PHYSICS.gripTraction
     lateralSpeed *= Math.max(0, 1 - traction * dt)

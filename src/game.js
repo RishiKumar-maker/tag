@@ -6,8 +6,8 @@ import { Network } from './network.js'
 import { buildCar } from './carLibrary.js'
 import * as ui from './ui.js'
 import {
-  PLAYER_COLORS, hexToCss, TAG_RADIUS, CHASER_IMMUNITY_MS,
-  CLASSIC_DURATION_MS, INFECTION_DURATION_MS, STATE_SEND_HZ,
+  PLAYER_COLORS, hexToCss, TAG_RADIUS, CHASER_IMMUNITY_MS, CHASER_SPEED_MULTIPLIER,
+  CLASSIC_DURATION_MS, INFECTION_DURATION_MS, STATE_SEND_HZ, SPEED_DISPLAY_SCALE,
   makeRoomCode, randomPlayerName,
 } from './constants.js'
 
@@ -300,6 +300,7 @@ export class Game {
           localCar.velocity.z
         )
       }
+      this._updateSpeedometer(localCar)
     }
 
     for (const [id, car] of this.cars) {
@@ -315,6 +316,12 @@ export class Game {
     this._checkTagging()
     this._updateTimerUI()
     this._updateMinimap()
+  }
+
+  _updateSpeedometer(car) {
+    const maxSpeed = PHYSICS.maxForwardSpeed * (car.isChaser ? CHASER_SPEED_MULTIPLIER : 1)
+    const speed = Math.abs(car.speed)
+    ui.setSpeedometer(speed / maxSpeed, speed * SPEED_DISPLAY_SCALE)
   }
 
   _resolveCollisions(car) {
