@@ -18,7 +18,7 @@ export const PHYSICS = {
 const REMOTE_SMOOTH_DECAY = 12 // higher = snaps to network state faster
 
 export class Car {
-  constructor({ color = 0xff8c69, isLocal = false } = {}) {
+  constructor({ color = 0xff8c69, isLocal = false, vehicle, wheels } = {}) {
     this.isLocal = isLocal
     this.color = color
 
@@ -35,45 +35,13 @@ export class Car {
     this._forward = new THREE.Vector3()
     this._right = new THREE.Vector3()
 
-    this.mesh = this._buildMesh()
+    this.wheels = wheels || []
+    this.mesh = this._assembleMesh(vehicle)
   }
 
-  _buildMesh() {
+  _assembleMesh(vehicle) {
     const group = new THREE.Group()
-
-    const bodyMat = new THREE.MeshLambertMaterial({ color: this.color, flatShading: true })
-    const darkMat = new THREE.MeshLambertMaterial({ color: 0x2a2233, flatShading: true })
-    const glassMat = new THREE.MeshLambertMaterial({ color: 0xcfe8ff, flatShading: true, transparent: true, opacity: 0.85 })
-
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 2.6), bodyMat)
-    body.position.y = 0.42
-    group.add(body)
-
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.45, 1.3), glassMat)
-    cabin.position.set(0, 0.86, -0.1)
-    group.add(cabin)
-
-    const bumperGeo = new THREE.BoxGeometry(1.56, 0.22, 0.3)
-    const bumper = new THREE.Mesh(bumperGeo, darkMat)
-    bumper.position.set(0, 0.28, 1.3)
-    group.add(bumper)
-
-    const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.32, 10)
-    const wheelSpecs = [
-      { x: -0.83, z: 0.85, front: true },
-      { x: 0.83, z: 0.85, front: true },
-      { x: -0.83, z: -0.85, front: false },
-      { x: 0.83, z: -0.85, front: false },
-    ]
-    this.wheels = wheelSpecs.map(spec => {
-      const pivot = new THREE.Group()
-      pivot.position.set(spec.x, 0.34, spec.z)
-      const wheelMesh = new THREE.Mesh(wheelGeo, darkMat)
-      wheelMesh.rotation.z = Math.PI / 2
-      pivot.add(wheelMesh)
-      group.add(pivot)
-      return { pivot, isFront: spec.front }
-    })
+    if (vehicle) group.add(vehicle)
 
     const shadow = new THREE.Mesh(
       new THREE.CircleGeometry(1.5, 16),
@@ -99,11 +67,6 @@ export class Car {
   setChaserVisual(isChaser, teamColorHex) {
     this.statusRing.visible = isChaser
     if (isChaser) this.statusRing.material.color.setHex(teamColorHex ?? 0xff8c69)
-  }
-
-  setBodyColor(hex) {
-    this.color = hex
-    this.mesh.children[0].material.color.setHex(hex)
   }
 
   applyInput(input) {

@@ -1,7 +1,10 @@
 import { Game } from './game.js'
 import * as ui from './ui.js'
+import { preloadModels, getCarTypes } from './carLibrary.js'
+import { CarPreview } from './carPreview.js'
 
 const game = new Game()
+preloadModels() // fetch the GLB car in the background as early as possible
 
 // ---------------- keyboard input ----------------
 const keys = new Set()
@@ -27,18 +30,57 @@ function readInput() {
   }
 }
 
+// ---------------- car picker ----------------
+const carTypes = getCarTypes()
+let carIndex = 0
+const carNameEl = document.getElementById('car-name')
+const PREVIEW_COLOR = 0xff8c69
+
+let carPreview = null
+try {
+  carPreview = new CarPreview(document.getElementById('car-preview-canvas'))
+} catch (e) {
+  console.warn('Car preview unavailable (no WebGL) -- car selection still works without the live preview.', e)
+}
+
+function updateCarPreview() {
+  const type = carTypes[carIndex]
+  if (!carPreview) {
+    carNameEl.textContent = type.name
+    return
+  }
+  carNameEl.textContent = 'Loading…'
+  carPreview.setCar(type.id, PREVIEW_COLOR)
+    .then(() => { carNameEl.textContent = type.name })
+    .catch(() => { carNameEl.textContent = type.name })
+}
+
+document.getElementById('btn-car-prev').addEventListener('click', () => {
+  carIndex = (carIndex - 1 + carTypes.length) % carTypes.length
+  updateCarPreview()
+})
+document.getElementById('btn-car-next').addEventListener('click', () => {
+  carIndex = (carIndex + 1) % carTypes.length
+  updateCarPreview()
+})
+updateCarPreview()
+
+function getSelectedCarType() {
+  return carTypes[carIndex].id
+}
+
 // ---------------- menu screen ----------------
 const nameInput = document.getElementById('input-name')
 const codeInput = document.getElementById('input-room-code')
 
 document.getElementById('btn-create').addEventListener('click', () => {
-  game.createRoom(ui.getNameInput())
+  game.createRoom(ui.getNameInput(), getSelectedCarType())
 })
 document.getElementById('btn-join').addEventListener('click', () => {
-  game.joinRoom(ui.getNameInput(), ui.getCodeInput())
+  game.joinRoom(ui.getNameInput(), ui.getCodeInput(), getSelectedCarType())
 })
 document.getElementById('btn-practice').addEventListener('click', () => {
-  game.startPractice(ui.getNameInput())
+  game.startPractice(ui.getNameInput(), getSelectedCarType())
 })
 nameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btn-create').click()
@@ -82,8 +124,11 @@ let lastTime = performance.now()
 function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05)
   lastTime = now
-  if (ui.getCurrentScreen() === 'game') {
+  const screen = ui.getCurrentScreen()
+  if (screen === 'game') {
     game.tick(dt, readInput())
+  } else if (screen === 'menu' && carPreview) {
+    carPreview.render(dt)
   }
   requestAnimationFrame(loop)
 }

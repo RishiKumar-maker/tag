@@ -3,6 +3,7 @@ import { GameScene, ARENA_RADIUS } from './scene.js'
 import { ParticleSystem } from './particles.js'
 import { Minimap } from './minimap.js'
 import { Network } from './network.js'
+import { buildCar } from './carLibrary.js'
 import * as ui from './ui.js'
 import {
   PLAYER_COLORS, hexToCss, TAG_RADIUS, CHASER_IMMUNITY_MS,
@@ -82,7 +83,7 @@ export class Game {
     }
 
     net.onPlayerInfo = (info, peerId) => {
-      this.roster.set(peerId, { id: peerId, name: info.name, color: info.color, isHost: !!info.isHost })
+      this.roster.set(peerId, { id: peerId, name: info.name, color: info.color, isHost: !!info.isHost, carType: info.carType || 'roadster' })
       this._refreshLobbyUI()
     }
 
@@ -92,7 +93,7 @@ export class Game {
       this._refreshLobbyUI()
     }
 
-    net.onRoundStart = (payload) => this._beginRound(payload)
+    net.onRoundStart = (payload) => { this._beginRound(payload) }
 
     net.onCarState = (state, peerId) => {
       const car = this.cars.get(peerId)
@@ -106,7 +107,7 @@ export class Game {
 
   _myInfo() {
     const me = this.roster.get(this.localId)
-    return { name: me.name, color: me.color, isHost: this.network.isHost }
+    return { name: me.name, color: me.color, isHost: this.network.isHost, carType: me.carType }
   }
 
   _hostId() {
@@ -116,19 +117,19 @@ export class Game {
 
   // ---------------- menu ----------------
 
-  createRoom(name) {
-    this._enterRoom(makeRoomCode(), true, name)
+  createRoom(name, carType) {
+    this._enterRoom(makeRoomCode(), true, name, carType)
   }
 
-  joinRoom(name, code) {
+  joinRoom(name, code, carType) {
     if (!code) {
       ui.setMenuHint('Enter a room code first.')
       return
     }
-    this._enterRoom(code.toUpperCase(), false, name)
+    this._enterRoom(code.toUpperCase(), false, name, carType)
   }
 
-  _enterRoom(code, isHost, name) {
+  _enterRoom(code, isHost, name, carType) {
     this.localName = name || randomPlayerName()
     this.roomCode = code
     this.network.join(code, isHost)
@@ -136,7 +137,7 @@ export class Game {
 
     const color = hexToCss(PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)])
     this.roster.clear()
-    this.roster.set(this.localId, { id: this.localId, name: this.localName, color, isHost })
+    this.roster.set(this.localId, { id: this.localId, name: this.localName, color, isHost, carType: carType || 'roadster' })
     this.mode = 'classic'
 
     try {
@@ -148,7 +149,7 @@ export class Game {
     this._refreshLobbyUI()
   }
 
-  startPractice(name) {
+  async startPractice(name, carType) {
     this.network.leave() // in case a previous room connection is still open
     this.isPractice = true
     this.roundActive = true
@@ -158,12 +159,12 @@ export class Game {
     this.localId = 'practice-solo'
 
     const color = hexToCss(PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)])
-    this.roundPlayers = [{ id: this.localId, name: this.localName, color }]
+    this.roundPlayers = [{ id: this.localId, name: this.localName, color, carType: carType || 'roadster' }]
     this.chaserSet = new Set()
 
     ui.showScreen('game')
     this._setupSceneIfNeeded()
-    this._spawnRoundCars()
+    await this._spawnRoundCars()
     ui.setHudMode('Practice')
     ui.setPracticeHud(true)
     ui.setStatusBanner('Free Drive', '')
@@ -186,7 +187,7 @@ export class Game {
     ui.setStartControls(players.length >= 2, this.network.isHost)
   }
 
-  startRound() {
+  async startRound() {
     if (!this.network.isHost) return
     const players = [...this.roster.values()]
     if (players.length < 2) {
@@ -202,12 +203,12 @@ export class Game {
       durationMs: this.mode === 'infection' ? INFECTION_DURATION_MS : CLASSIC_DURATION_MS,
     }
     this.network.sendRoundStart(payload)
-    this._beginRound(payload)
+    await this._beginRound(payload)
   }
 
   // ---------------- round lifecycle ----------------
 
-  _beginRound(payload) {
+  async _beginRound(payload) {
     this.mode = payload.mode
     this.roundPlayers = payload.players
     this.roundDurationMs = payload.durationMs
@@ -221,7 +222,7 @@ export class Game {
 
     ui.showScreen('game')
     this._setupSceneIfNeeded()
-    this._spawnRoundCars()
+    await this._spawnRoundCars()
     ui.setHudMode(this.mode === 'infection' ? 'Infection' : 'Classic')
     this._updateStatusBanner()
   }
@@ -240,15 +241,20 @@ export class Game {
     }
   }
 
-  _spawnRoundCars() {
+  async _spawnRoundCars() {
     for (const car of this.cars.values()) this.scene.removeCar(car.mesh)
     this.cars.clear()
 
     const n = this.roundPlayers.length
+    const built = await Promise.all(
+      this.roundPlayers.map((p) => buildCar(p.carType || 'roadster', parseInt(p.color.slice(1), 16)))
+    )
+
     this.roundPlayers.forEach((p, i) => {
       const angle = (i / n) * Math.PI * 2
       const radius = 6
-      const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId })
+      const { vehicle, wheels } = built[i]
+      const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId, vehicle, wheels })
       car.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
       car.heading = angle + Math.PI
       car.mesh.position.copy(car.position)
