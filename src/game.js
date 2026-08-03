@@ -254,7 +254,7 @@ export class Game {
       const angle = (i / n) * Math.PI * 2
       const radius = 6
       const { vehicle, wheels } = built[i]
-      const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId, vehicle, wheels })
+      const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId, vehicle, wheels, name: p.name })
       car.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
       car.heading = angle + Math.PI
       car.mesh.position.copy(car.position)

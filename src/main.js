@@ -18,17 +18,47 @@ window.addEventListener('keyup', (e) => keys.delete(e.code))
 window.addEventListener('blur', () => keys.clear())
 
 function readInput() {
-  const up = keys.has('KeyW') || keys.has('ArrowUp')
-  const down = keys.has('KeyS') || keys.has('ArrowDown')
-  const left = keys.has('KeyA') || keys.has('ArrowLeft')
-  const right = keys.has('KeyD') || keys.has('ArrowRight')
-  const drift = keys.has('Space') || keys.has('ShiftLeft') || keys.has('ShiftRight')
+  const up = keys.has('KeyW') || keys.has('ArrowUp') || touchState.forward
+  const down = keys.has('KeyS') || keys.has('ArrowDown') || touchState.reverse
+  const left = keys.has('KeyA') || keys.has('ArrowLeft') || touchState.left
+  const right = keys.has('KeyD') || keys.has('ArrowRight') || touchState.right
+  const drift = keys.has('Space') || keys.has('ShiftLeft') || keys.has('ShiftRight') || touchState.drift
   return {
     throttle: (up ? 1 : 0) - (down ? 1 : 0),
     steer: (left ? 1 : 0) - (right ? 1 : 0),
     drift,
   }
 }
+
+// ---------------- touch controls ----------------
+const touchState = { left: false, right: false, forward: false, reverse: false, drift: false }
+
+const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+if (hasTouch) document.body.classList.add('has-touch')
+
+function bindHoldButton(id, key) {
+  const btn = document.getElementById(id)
+  const press = (e) => {
+    e.preventDefault()
+    if (e.pointerId != null) btn.setPointerCapture(e.pointerId)
+    touchState[key] = true
+    btn.classList.add('pressed')
+  }
+  const release = () => {
+    touchState[key] = false
+    btn.classList.remove('pressed')
+  }
+  btn.addEventListener('pointerdown', press)
+  btn.addEventListener('pointerup', release)
+  btn.addEventListener('pointercancel', release)
+  btn.addEventListener('pointerleave', release)
+}
+
+bindHoldButton('btn-touch-left', 'left')
+bindHoldButton('btn-touch-right', 'right')
+bindHoldButton('btn-touch-accel', 'forward')
+bindHoldButton('btn-touch-reverse', 'reverse')
+bindHoldButton('btn-touch-drift', 'drift')
 
 // ---------------- car picker ----------------
 const carTypes = getCarTypes()

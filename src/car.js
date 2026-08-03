@@ -18,8 +18,50 @@ export const PHYSICS = {
 
 const REMOTE_SMOOTH_DECAY = 12 // higher = snaps to network state faster
 
+function createNameSprite(name) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+
+  ctx.font = '600 30px system-ui, -apple-system, sans-serif'
+  const textWidth = ctx.measureText(name).width
+  const pillWidth = Math.min(canvas.width - 8, textWidth + 40)
+  const pillHeight = 44
+  const x = (canvas.width - pillWidth) / 2
+  const y = (canvas.height - pillHeight) / 2
+  const r = pillHeight / 2
+
+  ctx.fillStyle = 'rgba(30, 23, 48, 0.55)'
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + pillWidth - r, y)
+  ctx.arcTo(x + pillWidth, y, x + pillWidth, y + r, r)
+  ctx.lineTo(x + pillWidth, y + pillHeight - r)
+  ctx.arcTo(x + pillWidth, y + pillHeight, x + pillWidth - r, y + pillHeight, r)
+  ctx.lineTo(x + r, y + pillHeight)
+  ctx.arcTo(x, y + pillHeight, x, y + pillHeight - r, r)
+  ctx.lineTo(x, y + r)
+  ctx.arcTo(x, y, x + r, y, r)
+  ctx.closePath()
+  ctx.fill()
+
+  ctx.fillStyle = '#f5f0fa'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(name, canvas.width / 2, canvas.height / 2 + 2)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.minFilter = THREE.LinearFilter
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+  const sprite = new THREE.Sprite(material)
+  sprite.scale.set(2.1, 0.53, 1)
+  sprite.position.set(0, 2.35, 0)
+  return sprite
+}
+
 export class Car {
-  constructor({ color = 0xff8c69, isLocal = false, vehicle, wheels } = {}) {
+  constructor({ color = 0xff8c69, isLocal = false, vehicle, wheels, name = '' } = {}) {
     this.isLocal = isLocal
     this.color = color
 
@@ -38,10 +80,10 @@ export class Car {
     this._right = new THREE.Vector3()
 
     this.wheels = wheels || []
-    this.mesh = this._assembleMesh(vehicle)
+    this.mesh = this._assembleMesh(vehicle, name)
   }
 
-  _assembleMesh(vehicle) {
+  _assembleMesh(vehicle, name) {
     const group = new THREE.Group()
     if (vehicle) group.add(vehicle)
 
@@ -62,6 +104,8 @@ export class Car {
     ring.visible = false
     group.add(ring)
     this.statusRing = ring
+
+    if (name) group.add(createNameSprite(name))
 
     return group
   }
@@ -87,8 +131,15 @@ export class Car {
     const speedFactor = THREE.MathUtils.clamp(Math.abs(this.speed) / maxForward, 0.15, 1)
     this.isDrifting = !!drift && Math.abs(this.speed) > PHYSICS.driftMinSpeed
 
+    // Heading rotation direction flips once the car is actually travelling
+    // backward, so steering still feels intuitive in reverse instead of
+    // curving the opposite way it looks like it should on screen. The
+    // wheel-turn visual below intentionally keeps using raw `steer`.
+    const movingBackward = this.speed < -0.15
+    const effectiveSteer = movingBackward ? -steer : steer
+
     const turnBoost = this.isDrifting ? PHYSICS.driftTurnBoost : 1
-    this.heading += steer * PHYSICS.turnRateBase * speedFactor * turnBoost * dt
+    this.heading += effectiveSteer * PHYSICS.turnRateBase * speedFactor * turnBoost * dt
     this.steerVisual = THREE.MathUtils.lerp(this.steerVisual, steer * 0.5, 0.2)
 
     this._forward.set(Math.sin(this.heading), 0, Math.cos(this.heading))
