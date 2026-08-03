@@ -21,6 +21,12 @@ to GitHub Pages.
   arrows to cycle through it. Three low-poly procedural cars (Roadster,
   Sport Coupe, Big Truck) plus a detailed Police Cruiser model. Your choice
   applies whether you create, join, or practice.
+- The **chaser drives faster** than everyone else (top speed and
+  acceleration both boosted) — it passes to whoever is "it" automatically,
+  in both Classic and Infection.
+- A **speedometer** in the bottom-left HUD shows your live speed, always
+  relative to your own current top speed (so it still reads sensibly
+  whether or not you're currently boosted as the chaser).
 
 ## How multiplayer works (no backend)
 
@@ -114,7 +120,8 @@ Everything gameplay-relevant is centralized so it's easy to nudge:
 - `src/car.js` → the `PHYSICS` object: top speed, acceleration, drift grip,
   turn rate, how boosted rotation feels mid-drift.
 - `src/constants.js`: player color palette, tag radius, post-tag immunity
-  window, round durations, network update rate.
+  window, round durations, network update rate, `CHASER_SPEED_MULTIPLIER`
+  (how much faster the chaser is), `SPEED_DISPLAY_SCALE` (speedometer units).
 
 ## Known limitations (v1)
 

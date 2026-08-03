@@ -91,6 +91,22 @@
 
     <div class="status-banner" id="status-banner"></div>
 
+    <div class="speedo-wrap">
+      <svg class="speedo-gauge" viewBox="0 0 100 70" aria-hidden="true">
+        <defs>
+          <linearGradient id="speedo-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#7fdbb6"/>
+            <stop offset="100%" stop-color="#ff8c69"/>
+          </linearGradient>
+        </defs>
+        <path class="speedo-track" d="M10,50 A40,40 0 0 1 90,50" />
+        <path class="speedo-fill" id="speedo-fill" d="M10,50 A40,40 0 0 1 90,50" />
+      </svg>
+      <div class="speedo-readout">
+        <span id="speedo-number">0</span><span class="speedo-unit">km/h</span>
+      </div>
+    </div>
+
     <div class="minimap-wrap">
       <canvas id="minimap" width="140" height="140"></canvas>
     </div>

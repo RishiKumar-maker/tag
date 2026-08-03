@@ -373,6 +373,51 @@ button, input { font-family: inherit; }
 }
 #minimap { display: block; border-radius: 10px; }
 
+.speedo-wrap {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  pointer-events: none;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px 6px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  text-align: center;
+}
+.speedo-gauge { width: 128px; height: 90px; display: block; }
+.speedo-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+.speedo-fill {
+  fill: none;
+  stroke: url(#speedo-gradient);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 125.7;
+  stroke-dashoffset: 125.7;
+}
+.speedo-readout { margin-top: -30px; }
+#speedo-number {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.speedo-unit {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 1px;
+}
+
 /* ---------- results ---------- */
 .results-card { width: min(440px, 92vw); }
 .results-list {
