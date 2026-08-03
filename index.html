@@ -25,6 +25,16 @@
     <label class="field-label" for="input-name">Your name</label>
     <input id="input-name" class="text-input" type="text" maxlength="16" placeholder="Racer" autocomplete="off">
 
+    <div class="car-picker">
+      <span class="field-label">Your car</span>
+      <div class="car-preview-frame">
+        <button id="btn-car-prev" class="car-arrow" type="button" aria-label="Previous car">&lsaquo;</button>
+        <canvas id="car-preview-canvas"></canvas>
+        <button id="btn-car-next" class="car-arrow" type="button" aria-label="Next car">&rsaquo;</button>
+      </div>
+      <div class="car-name" id="car-name">Roadster</div>
+    </div>
+
     <div class="menu-actions">
       <button id="btn-create" class="btn btn-primary">Create Room</button>
 

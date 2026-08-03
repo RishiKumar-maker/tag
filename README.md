@@ -17,6 +17,10 @@ to GitHub Pages.
   alone, no room or second player needed. No timer, no chaser, just the
   arena and your car. Good for testing drift feel or your connection/specs
   before inviting anyone.
+- **Pick your car** on the menu screen — a live rotating preview with
+  arrows to cycle through it. Three low-poly procedural cars (Roadster,
+  Sport Coupe, Big Truck) plus a detailed Police Cruiser model. Your choice
+  applies whether you create, join, or practice.
 
 ## How multiplayer works (no backend)
 
@@ -69,7 +73,9 @@ src/
   main.js                   keyboard input, button wiring, the render loop
   game.js                   core game state, tag logic, round flow
   network.js                Trystero networking wrapper
-  car.js                    car physics (drift model) + low-poly 3D model
+  car.js                    car physics (drift model) + mesh assembly
+  carLibrary.js             car registry: 3 procedural cars + GLB loading/caching/recoloring
+  carPreview.js             the menu's live rotating car preview (own tiny 3D scene)
   scene.js                  Three.js scene, chase camera, arena, lighting
   particles.js              drift smoke / tag-burst effects
   minimap.js                top-down minimap overlay
@@ -77,9 +83,29 @@ src/
   constants.js              tunables — colors, tag radius, round durations
 lib/
   three.module.min.js       vendored Three.js r185 (MIT)
+  three.core.min.js         Three.js's core module (r185 splits into two files)
   trystero-nostr.min.js     vendored Trystero, nostr strategy (MIT), bundled
                             with esbuild so there's nothing to npm install
+  GLTFLoader.min.js         vendored Three.js's GLTF loader addon (MIT),
+                            bundled the same way, sharing the same THREE
+                            instance as everything else (no duplicated code)
+assets/
+  models/police_car.glb     the Police Cruiser model
 ```
+
+## Adding more cars
+
+Two ways, both live in `src/carLibrary.js`:
+
+- **Procedural** (cheapest, zero load time): add a new `buildXxx(colorHex)`
+  function following the pattern of `buildRoadster`/`buildSport`/`buildTruck`
+  — build a `THREE.Group` from primitives, return `{ vehicle, wheels }`.
+- **GLB model**: drop the file in `assets/models/`, follow the
+  `loadPoliceTemplate`/`buildPolice` pattern — point it at the new file,
+  adjust `POLICE_SCALE`/body material name for your model's proportions and
+  material naming. Keep models small and low-poly (the police car is ~180KB,
+  ~3k triangles — a good target) so load time and frame rate stay solid on
+  weak hardware. Then add an entry to `CAR_TYPES` and `BUILDERS`.
 
 ## Tuning
 

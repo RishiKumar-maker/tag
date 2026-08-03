@@ -125,6 +125,49 @@ button, input { font-family: inherit; }
 
 .code-input { text-transform: uppercase; letter-spacing: 3px; text-align: center; }
 
+.car-picker {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.car-preview-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+#car-preview-canvas {
+  width: 200px;
+  height: 140px;
+  border-radius: var(--radius-md);
+  background: radial-gradient(70% 90% at 50% 65%, rgba(255, 255, 255, 0.10), transparent 70%);
+  border: 1px solid var(--glass-border);
+}
+.car-arrow {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.car-arrow:active { transform: scale(0.94); }
+.car-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--accent-mint);
+  min-height: 19px;
+}
+
 .menu-actions { width: 100%; display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
 .join-row { display: flex; gap: 8px; }
 .join-row .text-input { flex: 1; min-width: 0; }
