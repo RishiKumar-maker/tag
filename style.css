@@ -478,6 +478,79 @@ button, input { font-family: inherit; }
   #minimap { width: 100px; height: 100px; }
 }
 
+/* ---------- touch controls ---------- */
+.touch-controls {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+body.has-touch .touch-controls { display: block; }
+
+body.has-touch .minimap-wrap {
+  bottom: auto;
+  top: 64px;
+}
+body.has-touch .speedo-wrap {
+  bottom: auto;
+  top: 64px;
+}
+
+.touch-side {
+  position: absolute;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 12px;
+  pointer-events: none;
+}
+.touch-left {
+  left: calc(18px + env(safe-area-inset-left));
+  align-items: center;
+}
+.touch-right {
+  right: calc(18px + env(safe-area-inset-right));
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.touch-btn {
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-strong);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text-primary);
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.touch-btn.pressed {
+  background: var(--accent-coral);
+  color: #241528;
+  border-color: transparent;
+}
+
+.touch-pedal-row { display: flex; gap: 10px; }
+.touch-accel { width: 72px; height: 72px; font-size: 28px; }
+
+.touch-drift {
+  border-radius: var(--radius-md);
+  width: auto;
+  height: 42px;
+  padding: 0 18px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

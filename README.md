@@ -27,6 +27,12 @@ to GitHub Pages.
 - A **speedometer** in the bottom-left HUD shows your live speed, always
   relative to your own current top speed (so it still reads sensibly
   whether or not you're currently boosted as the chaser).
+- Every car shows a **name tag** floating above it, so you can tell who's
+  who at a glance without checking the minimap.
+- **Touch controls** appear automatically on phones/tablets — steering on
+  the bottom-left, accelerate/reverse/drift on the bottom-right. Keyboard
+  and touch both work at once, so a touchscreen Chromebook gets both for
+  free. Desktop/laptop browsers never see the touch buttons.
 
 ## How multiplayer works (no backend)
 
