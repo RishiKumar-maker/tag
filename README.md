@@ -29,10 +29,25 @@ to GitHub Pages.
   whether or not you're currently boosted as the chaser).
 - Every car shows a **name tag** floating above it, so you can tell who's
   who at a glance without checking the minimap.
-- **Touch controls** appear automatically on phones/tablets — steering on
-  the bottom-left, accelerate/reverse/drift on the bottom-right. Keyboard
-  and touch both work at once, so a touchscreen Chromebook gets both for
-  free. Desktop/laptop browsers never see the touch buttons.
+- **Touch controls** appear automatically on phones/tablets — accelerate
+  and reverse on the bottom-left, steering on the bottom-right, with drift
+  and item-use as smaller buttons above each cluster. Keyboard and touch
+  both work at once, so a touchscreen Chromebook gets both for free.
+  Desktop/laptop browsers never see the touch buttons. A fullscreen button
+  appears in the top HUD when a touch device is in landscape.
+- **Power-ups**: floating item boxes are scattered around the arena.
+  Driving over one grants a random ability (one at a time) — press **E**
+  (or the on-screen **USE** button) to activate it:
+  - *Oil Slick* — drops a hazard behind you; driving over it costs grip.
+  - *Shockwave* — briefly stuns everyone near your own car.
+  - *Boost* — a few seconds of extra speed.
+  - *Homing Shot* — a slow seeking shot that briefly stuns on a hit.
+  - *Shield* — blocks the next hostile effect, and doubles as
+    tag-immunity — you can't be tagged while it's active.
+
+  Item boxes are just part of the arena's data (`scene.js`), the same way
+  obstacles are, so a future map can simply define a different set — or
+  none at all — without touching any of the ability logic.
 
 ## How multiplayer works (no backend)
 
@@ -88,7 +103,8 @@ src/
   car.js                    car physics (drift model) + mesh assembly
   carLibrary.js             car registry: 3 procedural cars + GLB loading/caching/recoloring
   carPreview.js             the menu's live rotating car preview (own tiny 3D scene)
-  scene.js                  Three.js scene, chase camera, arena, lighting
+  abilities.js              ability registry + hazard/projectile simulation and hit detection
+  scene.js                  Three.js scene, chase camera, arena, lighting, item box spawns
   particles.js              drift smoke / tag-burst effects
   minimap.js                top-down minimap overlay
   ui.js                     all DOM manipulation, isolated from game logic
@@ -127,7 +143,10 @@ Everything gameplay-relevant is centralized so it's easy to nudge:
   turn rate, how boosted rotation feels mid-drift.
 - `src/constants.js`: player color palette, tag radius, post-tag immunity
   window, round durations, network update rate, `CHASER_SPEED_MULTIPLIER`
-  (how much faster the chaser is), `SPEED_DISPLAY_SCALE` (speedometer units).
+  (how much faster the chaser is), `SPEED_DISPLAY_SCALE` (speedometer units),
+  and the ability block (`STUN_MS`, `SLIP_MS`, `BOOST_MULTIPLIER`,
+  `SHIELD_MS`, `SHOCKWAVE_RADIUS`, `PROJECTILE_SPEED`, `ITEM_BOX_RESPAWN_MS`,
+  and friends).
 
 ## Known limitations (v1)
 

@@ -86,6 +86,7 @@
     <div class="hud-top">
       <div class="hud-pill mode-badge" id="hud-mode-badge">Classic</div>
       <div class="hud-pill timer-pill" id="hud-timer">3:00</div>
+      <button id="btn-fullscreen" class="hud-pill hud-icon-btn fullscreen-btn" type="button" aria-label="Toggle fullscreen">&#9974;</button>
       <button id="btn-leave-game" class="hud-pill hud-leave" type="button" aria-label="Leave game">Leave</button>
     </div>
 
@@ -111,16 +112,25 @@
       <canvas id="minimap" width="140" height="140"></canvas>
     </div>
 
+    <div class="inventory-wrap">
+      <div class="inventory-slot" id="inventory-slot">
+        <span id="inventory-label">No item</span>
+      </div>
+    </div>
+
     <div class="touch-controls" id="touch-controls">
       <div class="touch-side touch-left">
-        <button class="touch-btn touch-steer" id="btn-touch-left" type="button" aria-label="Steer left">&#8592;</button>
-        <button class="touch-btn touch-steer" id="btn-touch-right" type="button" aria-label="Steer right">&#8594;</button>
+        <button class="touch-btn touch-use" id="btn-touch-use" type="button" aria-label="Use item">USE</button>
+        <div class="touch-pedal-col">
+          <button class="touch-btn touch-pedal touch-accel" id="btn-touch-accel" type="button" aria-label="Accelerate">&#8593;</button>
+          <button class="touch-btn touch-pedal" id="btn-touch-reverse" type="button" aria-label="Reverse">&#8595;</button>
+        </div>
       </div>
       <div class="touch-side touch-right">
         <button class="touch-btn touch-drift" id="btn-touch-drift" type="button" aria-label="Drift">DRIFT</button>
-        <div class="touch-pedal-row">
-          <button class="touch-btn touch-pedal" id="btn-touch-reverse" type="button" aria-label="Reverse">&#8595;</button>
-          <button class="touch-btn touch-pedal touch-accel" id="btn-touch-accel" type="button" aria-label="Accelerate">&#8593;</button>
+        <div class="touch-steer-row">
+          <button class="touch-btn touch-steer" id="btn-touch-left" type="button" aria-label="Steer left">&#8592;</button>
+          <button class="touch-btn touch-steer" id="btn-touch-right" type="button" aria-label="Steer right">&#8594;</button>
         </div>
       </div>
     </div>

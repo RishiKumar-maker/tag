@@ -479,6 +479,41 @@ button, input { font-family: inherit; }
 }
 
 /* ---------- touch controls ---------- */
+.inventory-wrap {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.inventory-slot {
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 8px 20px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.inventory-slot.has-item {
+  color: var(--text-primary);
+  border-color: var(--accent-coral);
+  box-shadow: 0 0 14px rgba(255, 140, 105, 0.35);
+}
+
+.hud-icon-btn {
+  cursor: pointer;
+  font-size: 16px;
+  padding: 8px 12px;
+}
+.fullscreen-btn { display: none; }
+@media (orientation: landscape) {
+  body.has-touch .fullscreen-btn { display: flex; }
+}
+
 .touch-controls {
   display: none;
   position: absolute;
@@ -495,12 +530,20 @@ body.has-touch .speedo-wrap {
   bottom: auto;
   top: 64px;
 }
+body.has-touch .inventory-wrap {
+  bottom: auto;
+  top: 64px;
+  left: auto;
+  right: 50%;
+  transform: translateX(50%);
+}
 
 .touch-side {
   position: absolute;
   bottom: calc(18px + env(safe-area-inset-bottom));
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
   pointer-events: none;
 }
 .touch-left {
@@ -509,9 +552,7 @@ body.has-touch .speedo-wrap {
 }
 .touch-right {
   right: calc(18px + env(safe-area-inset-right));
-  flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
 }
 
 .touch-btn {
@@ -538,10 +579,11 @@ body.has-touch .speedo-wrap {
   border-color: transparent;
 }
 
-.touch-pedal-row { display: flex; gap: 10px; }
+.touch-pedal-col { display: flex; flex-direction: column; gap: 10px; }
+.touch-steer-row { display: flex; gap: 10px; }
 .touch-accel { width: 72px; height: 72px; font-size: 28px; }
 
-.touch-drift {
+.touch-drift, .touch-use {
   border-radius: var(--radius-md);
   width: auto;
   height: 42px;
@@ -550,6 +592,7 @@ body.has-touch .speedo-wrap {
   font-weight: 600;
   font-size: 13px;
 }
+.touch-use { border-color: var(--accent-coral); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
