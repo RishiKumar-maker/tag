@@ -39,6 +39,7 @@ export class GameScene {
     this._buildGround()
     this._buildFence()
     this._buildObstacles()
+    this._buildItemBoxes()
 
     this.carGroup = new THREE.Group()
     this.scene.add(this.carGroup)
@@ -134,6 +135,39 @@ export class GameScene {
       rock.rotation.set(seededRandom(i) * 3, seededRandom(i + 1) * 3, 0)
       this.scene.add(rock)
       this.colliders.push({ x, z, radius: 1.0 * scale })
+    }
+  }
+
+  // Item box positions are map data, same spirit as the obstacles above --
+  // a future second map simply defines a different (or empty) list here.
+  _buildItemBoxes() {
+    const geo = new THREE.OctahedronGeometry(0.55, 0)
+    const mat = new THREE.MeshLambertMaterial({ color: 0xf7d774, flatShading: true, emissive: 0xf7d774, emissiveIntensity: 0.45 })
+
+    this.itemBoxes = [] // { x, z, mesh }
+    const count = 6
+    for (let i = 0; i < count; i++) {
+      const a = seededRandom(i * 9.7 + 41) * Math.PI * 2
+      const r = 8 + seededRandom(i * 6.3 + 23) * (ARENA_RADIUS - 20)
+      const x = Math.cos(a) * r
+      const z = Math.sin(a) * r
+
+      const mesh = new THREE.Mesh(geo, mat.clone())
+      mesh.position.set(x, 1.15, z)
+      this.scene.add(mesh)
+      this.itemBoxes.push({ x, z, mesh })
+    }
+  }
+
+  setItemBoxVisible(index, visible) {
+    const box = this.itemBoxes[index]
+    if (box) box.mesh.visible = visible
+  }
+
+  animateItemBoxes(dt, elapsed) {
+    for (const box of this.itemBoxes) {
+      box.mesh.rotation.y += dt * 1.2
+      box.mesh.position.y = 1.15 + Math.sin(elapsed * 2 + box.x) * 0.12
     }
   }
 

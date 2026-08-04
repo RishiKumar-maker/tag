@@ -20,6 +20,9 @@ export class Network {
     this.onCarState = null
     this.onTagEvent = null
     this.onRoundEnd = null
+    this.onItemPickup = null
+    this.onAbilityUse = null
+    this.onAbilityHit = null
   }
 
   get selfId() {
@@ -39,6 +42,9 @@ export class Network {
       carState: make('car-state'),
       tagEvent: make('tag-event'),
       roundEnd: make('round-end'),
+      itemPickup: make('item-pickup'),
+      abilityUse: make('ability-use'),
+      abilityHit: make('ability-hit'),
     }
 
     this._actions.playerInfo.onMessage = (data, ctx) => this.onPlayerInfo?.(data, ctx.peerId)
@@ -47,6 +53,9 @@ export class Network {
     this._actions.carState.onMessage = (data, ctx) => this.onCarState?.(data, ctx.peerId)
     this._actions.tagEvent.onMessage = (data) => this.onTagEvent?.(data)
     this._actions.roundEnd.onMessage = (data) => this.onRoundEnd?.(data)
+    this._actions.itemPickup.onMessage = (data) => this.onItemPickup?.(data)
+    this._actions.abilityUse.onMessage = (data) => this.onAbilityUse?.(data)
+    this._actions.abilityHit.onMessage = (data) => this.onAbilityHit?.(data)
 
     this.room.onPeerJoin = (peerId) => this.onPeerJoin?.(peerId)
     this.room.onPeerLeave = (peerId) => this.onPeerLeave?.(peerId)
@@ -81,5 +90,14 @@ export class Network {
   }
   sendRoundEnd(payload) {
     this._actions.roundEnd?.send(payload)
+  }
+  sendItemPickup(payload) {
+    this._actions.itemPickup?.send(payload)
+  }
+  sendAbilityUse(payload) {
+    this._actions.abilityUse?.send(payload)
+  }
+  sendAbilityHit(payload) {
+    this._actions.abilityHit?.send(payload)
   }
 }

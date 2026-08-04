@@ -1,5 +1,7 @@
 import * as THREE from '../lib/three.module.min.js'
-import { CHASER_SPEED_MULTIPLIER } from './constants.js'
+import {
+  CHASER_SPEED_MULTIPLIER, STUN_MS, SLIP_MS, SLIP_TRACTION, BOOST_MS, BOOST_MULTIPLIER, SHIELD_MS,
+} from './constants.js'
 
 // Tuned constants for the arcade drift model. Feel free to nudge these.
 export const PHYSICS = {
@@ -72,6 +74,7 @@ export class Car {
     this.isDrifting = false
     this.steerVisual = 0
     this.isChaser = false
+    this.statusEffects = { stunnedUntil: 0, slippingUntil: 0, boostUntil: 0, shieldUntil: 0 }
 
     this.input = { throttle: 0, steer: 0, drift: false }
     this.netTarget = null
@@ -107,7 +110,31 @@ export class Car {
 
     if (name) group.add(createNameSprite(name))
 
+    const shield = new THREE.Mesh(
+      new THREE.SphereGeometry(1.7, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0x7ec8e3, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false })
+    )
+    shield.position.y = 0.9
+    shield.visible = false
+    group.add(shield)
+    this.shieldMesh = shield
+
     return group
+  }
+
+  /** Apply a status effect. Shield blocks any hostile effect except itself.
+   * Returns false if the effect was blocked. */
+  applyEffect(type, now = Date.now()) {
+    if (type !== 'shield' && this.isShielded(now)) return false
+    if (type === 'stun') this.statusEffects.stunnedUntil = Math.max(this.statusEffects.stunnedUntil, now + STUN_MS)
+    else if (type === 'slip') this.statusEffects.slippingUntil = Math.max(this.statusEffects.slippingUntil, now + SLIP_MS)
+    else if (type === 'boost') this.statusEffects.boostUntil = now + BOOST_MS
+    else if (type === 'shield') this.statusEffects.shieldUntil = now + SHIELD_MS
+    return true
+  }
+
+  isShielded(now = Date.now()) {
+    return now < this.statusEffects.shieldUntil
   }
 
   setChaserVisual(isChaser, teamColorHex) {
@@ -123,8 +150,17 @@ export class Car {
   /** Local physics step, only used for the player's own car. */
   step(dt) {
     dt = Math.min(dt, 0.05)
-    const { throttle, steer, drift } = this.input
-    const speedMult = this.isChaser ? CHASER_SPEED_MULTIPLIER : 1
+    const now = Date.now()
+    const stunned = now < this.statusEffects.stunnedUntil
+    const slipping = now < this.statusEffects.slippingUntil
+    const boosted = now < this.statusEffects.boostUntil
+
+    const rawInput = this.input
+    const throttle = stunned ? 0 : rawInput.throttle
+    const steer = stunned ? 0 : rawInput.steer
+    const drift = stunned ? false : rawInput.drift
+
+    const speedMult = (this.isChaser ? CHASER_SPEED_MULTIPLIER : 1) * (boosted ? BOOST_MULTIPLIER : 1)
     const maxForward = PHYSICS.maxForwardSpeed * speedMult
     const engineForce = PHYSICS.engineForce * speedMult
 
@@ -154,7 +190,7 @@ export class Car {
     forwardSpeed *= Math.max(0, 1 - PHYSICS.dragCoeff * dt)
     forwardSpeed = THREE.MathUtils.clamp(forwardSpeed, -PHYSICS.maxReverseSpeed, maxForward)
 
-    const traction = this.isDrifting ? PHYSICS.driftTraction : PHYSICS.gripTraction
+    const traction = slipping ? SLIP_TRACTION : (this.isDrifting ? PHYSICS.driftTraction : PHYSICS.gripTraction)
     lateralSpeed *= Math.max(0, 1 - traction * dt)
 
     this.velocity.copy(this._forward).multiplyScalar(forwardSpeed).addScaledVector(this._right, lateralSpeed)
@@ -195,5 +231,6 @@ export class Car {
     for (const w of this.wheels) {
       if (w.isFront) w.pivot.rotation.y = this.steerVisual
     }
+    if (this.shieldMesh) this.shieldMesh.visible = this.isShielded()
   }
 }

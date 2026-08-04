@@ -4,10 +4,12 @@ import { ParticleSystem } from './particles.js'
 import { Minimap } from './minimap.js'
 import { Network } from './network.js'
 import { buildCar } from './carLibrary.js'
+import { AbilityManager, randomAbilityId, abilityName, SHOCKWAVE_RADIUS } from './abilities.js'
 import * as ui from './ui.js'
 import {
   PLAYER_COLORS, hexToCss, TAG_RADIUS, CHASER_IMMUNITY_MS, CHASER_SPEED_MULTIPLIER,
   CLASSIC_DURATION_MS, INFECTION_DURATION_MS, STATE_SEND_HZ, SPEED_DISPLAY_SCALE,
+  ITEM_BOX_RADIUS, ITEM_BOX_RESPAWN_MS,
   makeRoomCode, randomPlayerName,
 } from './constants.js'
 
@@ -40,6 +42,11 @@ export class Game {
 
     this.cars = new Map()
     this._lastStateSend = 0
+    this._elapsed = 0
+
+    this.abilityManager = null
+    this.inventory = null // held ability id, or null
+    this.itemBoxState = new Map() // boxIndex -> timestamp when it respawns (absent/past = active)
 
     this._bindNetwork()
   }
@@ -103,6 +110,24 @@ export class Game {
     net.onTagEvent = ({ targetId, timestamp }) => this._applyTag(targetId, timestamp)
 
     net.onRoundEnd = (payload) => this._finishRound(payload)
+
+    net.onItemPickup = ({ boxId, timestamp }) => {
+      this.itemBoxState.set(boxId, timestamp + ITEM_BOX_RESPAWN_MS)
+      this.scene?.setItemBoxVisible(boxId, false)
+    }
+
+    net.onAbilityUse = (payload) => {
+      if (payload.abilityId === 'shockwave') this._resolveShockwave(payload)
+      this.abilityManager?.handleUse(payload, this.cars)
+    }
+
+    net.onAbilityHit = ({ targetId, effectType, useId, timestamp }) => {
+      const car = this.cars.get(targetId)
+      if (car && car.applyEffect(effectType, timestamp) && this.particles) {
+        this.particles.spawnTagBurst(car.position.x, car.position.z, 0xff8c69)
+      }
+      if (useId) this.abilityManager?.removeProjectile(useId)
+    }
   }
 
   _myInfo() {
@@ -168,6 +193,7 @@ export class Game {
     ui.setHudMode('Practice')
     ui.setPracticeHud(true)
     ui.setStatusBanner('Free Drive', '')
+    this._resetItemsAndAbilities()
   }
 
   // ---------------- lobby ----------------
@@ -225,6 +251,15 @@ export class Game {
     await this._spawnRoundCars()
     ui.setHudMode(this.mode === 'infection' ? 'Infection' : 'Classic')
     this._updateStatusBanner()
+    this._resetItemsAndAbilities()
+  }
+
+  _resetItemsAndAbilities() {
+    this.inventory = null
+    ui.setInventory(null)
+    this.itemBoxState.clear()
+    this.abilityManager?.clear()
+    if (this.scene) for (let i = 0; i < this.scene.itemBoxes.length; i++) this.scene.setItemBoxVisible(i, true)
   }
 
   _setupSceneIfNeeded() {
@@ -233,6 +268,7 @@ export class Game {
       this.scene = new GameScene(ui.getGameCanvas())
       this.particles = new ParticleSystem(this.scene.scene)
       this.minimap = new Minimap(ui.getMinimapCanvas(), ARENA_RADIUS)
+      this.abilityManager = new AbilityManager(this.scene)
     } catch (e) {
       console.error('Could not start the 3D renderer:', e)
       ui.showScreen('menu')
@@ -285,6 +321,7 @@ export class Game {
 
   tick(dt, input) {
     if (!this.roundActive || !this.scene) return
+    this._elapsed += dt
 
     const localCar = this.cars.get(this.localId)
     if (localCar) {
@@ -300,7 +337,16 @@ export class Game {
           localCar.velocity.z
         )
       }
+      if (Date.now() < localCar.statusEffects.boostUntil && Math.random() < 0.7) {
+        this.particles.spawnDriftSmoke(
+          localCar.position.x - Math.sin(localCar.heading) * 1.3,
+          localCar.position.z - Math.cos(localCar.heading) * 1.3,
+          localCar.velocity.x,
+          localCar.velocity.z
+        )
+      }
       this._updateSpeedometer(localCar)
+      this._checkItemPickup(localCar)
     }
 
     for (const [id, car] of this.cars) {
@@ -308,6 +354,9 @@ export class Game {
     }
 
     this.particles.update(dt)
+    this.scene.animateItemBoxes(dt, this._elapsed)
+    this.abilityManager?.update(dt, this.cars)
+    this._checkAbilityHits(localCar)
 
     if (localCar) this.scene.updateCamera(localCar, dt)
     this.scene.render()
@@ -316,6 +365,71 @@ export class Game {
     this._checkTagging()
     this._updateTimerUI()
     this._updateMinimap()
+  }
+
+  _checkItemPickup(localCar) {
+    if (this.inventory || !this.scene) return
+    const now = Date.now()
+    this.scene.itemBoxes.forEach((box, i) => {
+      const respawnAt = this.itemBoxState.get(i) || 0
+      if (now < respawnAt) return
+      const dist = Math.hypot(localCar.position.x - box.x, localCar.position.z - box.z)
+      if (dist > ITEM_BOX_RADIUS + PHYSICS.carRadius) return
+      this.inventory = randomAbilityId()
+      ui.setInventory(abilityName(this.inventory))
+      this.itemBoxState.set(i, now + ITEM_BOX_RESPAWN_MS)
+      this.scene.setItemBoxVisible(i, false)
+      this.network.sendItemPickup({ boxId: i, timestamp: now })
+    })
+  }
+
+  _checkAbilityHits(localCar) {
+    if (!localCar || !this.abilityManager) return
+    const hits = this.abilityManager.checkLocalHits(localCar, this.localId)
+    for (const hit of hits) {
+      if (hit.useId) this.abilityManager.removeProjectile(hit.useId)
+      const applied = localCar.applyEffect(hit.effectType)
+      if (applied && this.particles) this.particles.spawnTagBurst(localCar.position.x, localCar.position.z, 0xff8c69)
+      if (hit.useId) {
+        this.network.sendAbilityHit({ targetId: this.localId, effectType: hit.effectType, useId: hit.useId, casterId: hit.casterId, timestamp: Date.now() })
+      }
+    }
+  }
+
+  /** Activate whatever's in the local player's inventory slot. */
+  useAbility() {
+    if (!this.roundActive || !this.inventory) return
+    const localCar = this.cars.get(this.localId)
+    if (!localCar) return
+
+    const abilityId = this.inventory
+    const behind = abilityId === 'oilslick'
+    const payload = {
+      abilityId,
+      useId: `${this.localId}-${Date.now()}`,
+      casterId: this.localId,
+      x: localCar.position.x - (behind ? Math.sin(localCar.heading) * 1.4 : 0),
+      z: localCar.position.z - (behind ? Math.cos(localCar.heading) * 1.4 : 0),
+      heading: localCar.heading,
+      timestamp: Date.now(),
+    }
+
+    this.network.sendAbilityUse(payload)
+    if (abilityId === 'shockwave') this._resolveShockwave(payload)
+    this.abilityManager?.handleUse(payload, this.cars)
+
+    this.inventory = null
+    ui.setInventory(null)
+  }
+
+  _resolveShockwave({ casterId, x, z, timestamp, useId }) {
+    const localCar = this.cars.get(this.localId)
+    if (!localCar || this.localId === casterId) return
+    const dist = Math.hypot(localCar.position.x - x, localCar.position.z - z)
+    if (dist > SHOCKWAVE_RADIUS) return
+    const applied = localCar.applyEffect('stun', timestamp)
+    if (applied && this.particles) this.particles.spawnTagBurst(localCar.position.x, localCar.position.z, 0xff8c69)
+    this.network.sendAbilityHit({ targetId: this.localId, effectType: 'stun', casterId, useId, timestamp: Date.now() })
   }
 
   _updateSpeedometer(car) {
@@ -383,7 +497,7 @@ export class Game {
     for (const p of this.roundPlayers) {
       if (p.id === this.localId || this.chaserSet.has(p.id)) continue
       const otherCar = this.cars.get(p.id)
-      if (!otherCar) continue
+      if (!otherCar || otherCar.isShielded()) continue
       if (localCar.position.distanceTo(otherCar.position) < TAG_RADIUS) {
         const timestamp = Date.now()
         this.network.sendTagEvent({ targetId: p.id, timestamp })
@@ -530,6 +644,9 @@ export class Game {
       for (const car of this.cars.values()) this.scene.removeCar(car.mesh)
     }
     this.cars.clear()
+    this.abilityManager?.clear()
+    this.inventory = null
+    ui.setInventory(null)
     ui.setPracticeHud(false)
     try {
       history.replaceState(null, '', location.pathname)

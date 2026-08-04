@@ -17,6 +17,25 @@ export const TAG_RADIUS = 2.15
 export const CHASER_IMMUNITY_MS = 1400
 export const CHASER_SPEED_MULTIPLIER = 1.18 // chaser gets a top-speed + acceleration edge
 export const SPEED_DISPLAY_SCALE = 4.5 // world units/sec -> a dashboard-feeling "km/h" number
+
+// ---------------- abilities / status effects ----------------
+export const STUN_MS = 900
+export const SLIP_MS = 1300
+export const SLIP_TRACTION = 0.6
+export const BOOST_MS = 3000
+export const BOOST_MULTIPLIER = 1.35
+export const SHIELD_MS = 4000
+export const SHOCKWAVE_RADIUS = 5.5
+export const HAZARD_RADIUS = 1.6
+export const HAZARD_LIFETIME_MS = 7000
+export const HAZARD_REHIT_COOLDOWN_MS = 1500
+export const PROJECTILE_SPEED = 15
+export const PROJECTILE_LIFETIME_MS = 2200
+export const PROJECTILE_RADIUS = 0.85
+export const PROJECTILE_HOMING_TURN_RATE = 1.4 // rad/sec max, gentle homing
+export const ITEM_BOX_RADIUS = 1.4
+export const ITEM_BOX_RESPAWN_MS = 10000
+
 export const CLASSIC_DURATION_MS = 3 * 60 * 1000
 export const INFECTION_DURATION_MS = 4 * 60 * 1000
 export const STATE_SEND_HZ = 18

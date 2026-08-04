@@ -108,6 +108,12 @@ export function setSpeedometer(fraction, displayValue) {
   el('speedo-number').textContent = String(Math.round(displayValue))
 }
 
+export function setInventory(name) {
+  const slot = el('inventory-slot')
+  el('inventory-label').textContent = name || 'No item'
+  slot.classList.toggle('has-item', !!name)
+}
+
 export function setPracticeHud(isPractice) {
   el('hud-timer').classList.toggle('hidden', isPractice)
   el('minimap').parentElement.classList.toggle('hidden', isPractice)
