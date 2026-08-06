@@ -17,6 +17,9 @@ to GitHub Pages.
   alone, no room or second player needed. No timer, no chaser, just the
   arena and your car. Good for testing drift feel or your connection/specs
   before inviting anyone.
+- A **How to Play** button on the menu and lobby screens opens an in-game
+  reference for controls, tag rules, and what each ability does — so new
+  players don't need to read this file to get going.
 - **Pick your car** on the menu screen — a live rotating preview with
   arrows to cycle through it. Three low-poly procedural cars (Roadster,
   Sport Coupe, Big Truck) plus a detailed Police Cruiser model. Your choice
@@ -64,6 +67,35 @@ One thing worth knowing: every copy of this game that hasn't changed the
 codes are random 5-character codes (millions of combinations) so collisions
 are very unlikely, but if you want a fully private namespace for your
 deployment, change `APP_ID` to something unique before sharing it around.
+
+**Cross-network connectivity**: two peers on the same device or same LAN
+can usually connect with just STUN (which is all Trystero configures by
+default). Two peers on genuinely different networks — different homes,
+one on WiFi and one on mobile data, behind a school/office firewall — often
+can't with STUN alone, because at least one side is behind a NAT type it
+can't traverse; that needs a TURN relay server as a fallback.
+
+`src/network.js` computes free TURN credentials at connect time (an HMAC
+scheme against Metered's `staticauth.openrelay.metered.ca`, no signup, no
+backend). Worth knowing honestly: **free, no-signup TURN service is a
+genuinely fragile category** — the previous static username/password this
+project used got deprecated industry-wide, which is likely why it wasn't
+enough on its own. If multiplayer across real networks is still unreliable
+after this:
+
+1. Open the browser console (F12) on both devices while stuck in the
+   lobby — `src/network.js` now logs each peer's actual connection state
+   every few seconds. If a peer never appears in that log at all,
+   signaling isn't finding them (rare). If it appears but sits on
+   `checking` or reaches `failed`, that's ICE/TURN not completing.
+2. **For guaranteed reliability**, get your own free TURN credentials —
+   takes about 2 minutes, no credit card: sign up at
+   [Metered.ca's TURN server tool](https://dashboard.metered.ca/signup?tool=turnserver),
+   grab the API key from your dashboard, and swap it into the
+   `TURN_STATIC_AUTH_SECRET`/`TURN_STATIC_AUTH_HOST` constants at the top
+   of `src/network.js` (or use their REST credential endpoint directly —
+   their dashboard shows the exact snippet). The free tier is 20GB/month,
+   far more than a casual game needs.
 
 ## Local testing
 
