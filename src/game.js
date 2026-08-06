@@ -58,6 +58,11 @@ export class Game {
       if (this.localId) net.sendPlayerInfo(this._myInfo(), peerId)
     }
 
+    net.onJoinError = ({ error }) => {
+      console.error('Connection error:', error)
+      ui.toast("Couldn't connect to a peer -- check your internet connection and try again.")
+    }
+
     net.onPeerLeave = (peerId) => {
       this.roster.delete(peerId)
       const car = this.cars.get(peerId)
@@ -154,10 +159,10 @@ export class Game {
     this._enterRoom(code.toUpperCase(), false, name, carType)
   }
 
-  _enterRoom(code, isHost, name, carType) {
+  async _enterRoom(code, isHost, name, carType) {
     this.localName = name || randomPlayerName()
     this.roomCode = code
-    this.network.join(code, isHost)
+    await this.network.join(code, isHost)
     this.localId = this.network.selfId
 
     const color = hexToCss(PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)])
@@ -172,6 +177,9 @@ export class Game {
     ui.setLobbyRoomCode(code)
     ui.showScreen('lobby')
     this._refreshLobbyUI()
+
+    clearInterval(this._diagInterval)
+    this._diagInterval = setInterval(() => this.network.logConnectionStates(), 3000)
   }
 
   async startPractice(name, carType) {
@@ -636,6 +644,7 @@ export class Game {
   }
 
   leaveToMenu() {
+    clearInterval(this._diagInterval)
     this.network.leave()
     this.roundActive = false
     this.isPractice = false

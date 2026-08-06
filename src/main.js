@@ -2,17 +2,19 @@ import { Game } from './game.js'
 import * as ui from './ui.js'
 import { preloadModels, getCarTypes } from './carLibrary.js'
 import { CarPreview } from './carPreview.js'
+import { ABILITY_TYPES } from './abilities.js'
 
 const game = new Game()
 preloadModels() // fetch the GLB car in the background as early as possible
 
 // ---------------- keyboard input ----------------
 const keys = new Set()
-const DRIVE_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']
+const DRIVE_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyE']
 
 window.addEventListener('keydown', (e) => {
   keys.add(e.code)
   if (ui.getCurrentScreen() === 'game' && DRIVE_KEYS.includes(e.code)) e.preventDefault()
+  if (e.code === 'KeyE' && ui.getCurrentScreen() === 'game' && !e.repeat) game.useAbility()
 })
 window.addEventListener('keyup', (e) => keys.delete(e.code))
 window.addEventListener('blur', () => keys.clear())
@@ -60,6 +62,24 @@ bindHoldButton('btn-touch-accel', 'forward')
 bindHoldButton('btn-touch-reverse', 'reverse')
 bindHoldButton('btn-touch-drift', 'drift')
 
+document.getElementById('btn-touch-use').addEventListener('pointerdown', (e) => {
+  e.preventDefault()
+  game.useAbility()
+})
+
+// ---------------- fullscreen ----------------
+const fullscreenBtn = document.getElementById('btn-fullscreen')
+fullscreenBtn.addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(() => {})
+  } else {
+    document.exitFullscreen?.()
+  }
+})
+document.addEventListener('fullscreenchange', () => {
+  fullscreenBtn.textContent = document.fullscreenElement ? '⤢' : '⛶'
+})
+
 // ---------------- car picker ----------------
 const carTypes = getCarTypes()
 let carIndex = 0
@@ -98,6 +118,34 @@ updateCarPreview()
 function getSelectedCarType() {
   return carTypes[carIndex].id
 }
+
+// ---------------- how to play ----------------
+const helpOverlay = document.getElementById('help-overlay')
+const helpAbilityList = document.getElementById('help-ability-list')
+for (const a of ABILITY_TYPES) {
+  const li = document.createElement('li')
+  const strong = document.createElement('strong')
+  strong.textContent = a.name
+  li.appendChild(strong)
+  li.appendChild(document.createTextNode(' — ' + a.hint))
+  helpAbilityList.appendChild(li)
+}
+
+function openHelp() {
+  helpOverlay.classList.remove('hidden')
+}
+function closeHelp() {
+  helpOverlay.classList.add('hidden')
+}
+document.getElementById('btn-how-to-play').addEventListener('click', openHelp)
+document.getElementById('btn-how-to-play-lobby').addEventListener('click', openHelp)
+document.getElementById('btn-close-help').addEventListener('click', closeHelp)
+helpOverlay.addEventListener('click', (e) => {
+  if (e.target === helpOverlay) closeHelp()
+})
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && !helpOverlay.classList.contains('hidden')) closeHelp()
+})
 
 // ---------------- menu screen ----------------
 const nameInput = document.getElementById('input-name')
