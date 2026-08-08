@@ -66,6 +66,7 @@ export class Network {
     this.onAbilityUse = null
     this.onAbilityHit = null
     this.onJoinError = null
+    this.onPlayerCrash = null
   }
 
   get selfId() {
@@ -93,6 +94,7 @@ export class Network {
       itemPickup: make('item-pickup'),
       abilityUse: make('ability-use'),
       abilityHit: make('ability-hit'),
+      playerCrash: make('player-crash'),
     }
 
     this._actions.playerInfo.onMessage = (data, ctx) => this.onPlayerInfo?.(data, ctx.peerId)
@@ -104,6 +106,7 @@ export class Network {
     this._actions.itemPickup.onMessage = (data) => this.onItemPickup?.(data)
     this._actions.abilityUse.onMessage = (data) => this.onAbilityUse?.(data)
     this._actions.abilityHit.onMessage = (data) => this.onAbilityHit?.(data)
+    this._actions.playerCrash.onMessage = (data, ctx) => this.onPlayerCrash?.(data, ctx.peerId)
 
     this.room.onPeerJoin = (peerId) => this.onPeerJoin?.(peerId)
     this.room.onPeerLeave = (peerId) => this.onPeerLeave?.(peerId)
@@ -166,5 +169,8 @@ export class Network {
   }
   sendAbilityHit(payload) {
     this._actions.abilityHit?.send(payload)
+  }
+  sendPlayerCrash(payload) {
+    this._actions.playerCrash?.send(payload)
   }
 }

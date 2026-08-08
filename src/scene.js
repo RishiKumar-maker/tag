@@ -1,9 +1,14 @@
 import * as THREE from '../lib/three.module.min.js'
 
 export const ARENA_RADIUS = 44
+export const TRACK_STRAIGHT = 70
+export const TRACK_CURVE_RADIUS = 26
+export const TRACK_HALF_WIDTH = 9
 
 const SKY = 0xf6d9be
 const GROUND = 0x8fbfa0
+const TRACK_SKY = 0xdfd3ea
+const TRACK_GROUND = 0x6b6478
 
 // Deterministic pseudo-random so every client generates the identical layout.
 function seededRandom(seed) {
@@ -11,9 +16,32 @@ function seededRandom(seed) {
   return x - Math.floor(x)
 }
 
+/** A stadium (two straights + two semicircle ends) walked as a sequence of
+ * waypoints. Used for the track shape, walls, traffic paths, and (by
+ * finding the closest waypoint each frame) distance/progress tracking --
+ * no separate checkpoint system needed. */
+export function buildStadiumWaypoints(straight, radius, curveSegs = 24) {
+  const pts = []
+  const half = straight / 2
+  pts.push({ x: -half, z: -radius })
+  pts.push({ x: half, z: -radius })
+  for (let i = 1; i <= curveSegs; i++) {
+    const a = -Math.PI / 2 + (Math.PI * i) / curveSegs
+    pts.push({ x: half + radius * Math.cos(a), z: radius * Math.sin(a) })
+  }
+  pts.push({ x: -half, z: radius })
+  for (let i = 1; i <= curveSegs; i++) {
+    const a = Math.PI / 2 + (Math.PI * i) / curveSegs
+    pts.push({ x: -half + radius * Math.cos(a), z: radius * Math.sin(a) })
+  }
+  pts.pop() // last point duplicates pts[0], closing the loop implicitly
+  return pts
+}
+
 export class GameScene {
-  constructor(canvas) {
+  constructor(canvas, mapId = 'arena') {
     this.canvas = canvas
+    this.mapId = mapId
     this.colliders = [] // {x, z, radius} static obstacle circles, used for gameplay collision
 
     this.renderer = new THREE.WebGLRenderer({
@@ -25,9 +53,6 @@ export class GameScene {
     this.renderer.shadowMap.enabled = false // fake blob shadows instead, real shadow maps are costly
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(SKY)
-    this.scene.fog = new THREE.Fog(SKY, 42, 100)
-
     this.camera = new THREE.PerspectiveCamera(64, 1, 0.1, 120)
     this.camera.position.set(0, 8, -10)
     this._camLook = new THREE.Vector3()
@@ -35,11 +60,15 @@ export class GameScene {
     this.followHeight = 4.4
     this.camDecay = 7
 
-    this._buildLights()
-    this._buildGround()
-    this._buildFence()
-    this._buildObstacles()
-    this._buildItemBoxes()
+    this.itemBoxes = []
+    this.waypoints = null
+    this.trackHalfWidth = TRACK_HALF_WIDTH
+
+    if (mapId === 'traffic') {
+      this._buildTrafficMap()
+    } else {
+      this._buildArenaMap()
+    }
 
     this.carGroup = new THREE.Group()
     this.scene.add(this.carGroup)
@@ -50,6 +79,92 @@ export class GameScene {
     this._onResize = this._onResize.bind(this)
     window.addEventListener('resize', this._onResize)
     this._onResize()
+  }
+
+  _buildArenaMap() {
+    this.scene.background = new THREE.Color(SKY)
+    this.scene.fog = new THREE.Fog(SKY, 42, 100)
+    this._buildLights()
+    this._buildGround()
+    this._buildFence()
+    this._buildObstacles()
+    this._buildItemBoxes()
+  }
+
+  _buildTrafficMap() {
+    this.scene.background = new THREE.Color(TRACK_SKY)
+    this.scene.fog = new THREE.Fog(TRACK_SKY, 55, 130)
+
+    const hemi = new THREE.HemisphereLight(0xe9defa, 0x5c5568, 1.1)
+    this.scene.add(hemi)
+    const sun = new THREE.DirectionalLight(0xffe9c9, 1.2)
+    sun.position.set(-25, 35, 15)
+    this.scene.add(sun)
+
+    this.waypoints = buildStadiumWaypoints(TRACK_STRAIGHT, TRACK_CURVE_RADIUS)
+    this.loopLength = TRACK_STRAIGHT * 2 + Math.PI * TRACK_CURVE_RADIUS
+
+    const groundW = TRACK_STRAIGHT + (TRACK_CURVE_RADIUS + TRACK_HALF_WIDTH) * 2 + 20
+    const groundD = (TRACK_CURVE_RADIUS + TRACK_HALF_WIDTH) * 2 + 20
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(groundW, groundD),
+      new THREE.MeshLambertMaterial({ color: TRACK_GROUND })
+    )
+    ground.rotation.x = -Math.PI / 2
+    this.scene.add(ground)
+
+    // lane markings: thin bright segments down the centerline, purely decorative
+    for (let i = 0; i < this.waypoints.length; i += 2) {
+      const wp = this.waypoints[i]
+      const mark = new THREE.Mesh(
+        new THREE.CircleGeometry(0.5, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18 })
+      )
+      mark.rotation.x = -Math.PI / 2
+      mark.position.set(wp.x, 0.02, wp.z)
+      this.scene.add(mark)
+    }
+
+    this._buildTrackWalls()
+  }
+
+  _buildTrackWalls() {
+    const wallMat = new THREE.MeshLambertMaterial({ color: 0xada0c9, flatShading: true })
+    const wallGeo = new THREE.BoxGeometry(1.3, 1.1, 1.3)
+    const n = this.waypoints.length
+    for (let i = 0; i < n; i += 2) {
+      const wp = this.waypoints[i]
+      const next = this.waypoints[(i + 1) % n]
+      const dx = next.x - wp.x
+      const dz = next.z - wp.z
+      const len = Math.hypot(dx, dz) || 1
+      const perpX = -dz / len
+      const perpZ = dx / len
+
+      const inner = new THREE.Mesh(wallGeo, wallMat)
+      inner.position.set(wp.x - perpX * this.trackHalfWidth, 0.55, wp.z - perpZ * this.trackHalfWidth)
+      this.scene.add(inner)
+
+      const outer = new THREE.Mesh(wallGeo, wallMat)
+      outer.position.set(wp.x + perpX * this.trackHalfWidth, 0.55, wp.z + perpZ * this.trackHalfWidth)
+      this.scene.add(outer)
+    }
+  }
+
+  /** Nearest waypoint to (x,z) and the distance to it -- used both for
+   * keeping cars within the track's walls and for tracking how far a
+   * player has travelled around the loop. */
+  findClosestWaypoint(x, z) {
+    let bestIndex = 0
+    let bestDistSq = Infinity
+    for (let i = 0; i < this.waypoints.length; i++) {
+      const wp = this.waypoints[i]
+      const dx = x - wp.x
+      const dz = z - wp.z
+      const d = dx * dx + dz * dz
+      if (d < bestDistSq) { bestDistSq = d; bestIndex = i }
+    }
+    return { index: bestIndex, distance: Math.sqrt(bestDistSq) }
   }
 
   _buildLights() {

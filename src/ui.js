@@ -80,6 +80,7 @@ export function renderPlayerList(players, localId, hostId) {
 const MODE_DESCRIPTIONS = {
   classic: "One chaser. Get tagged, you're it.",
   infection: 'Tagged players join the chase. Last one standing wins.',
+  race: 'Endless traffic weaving. One crash ends your run — go the distance.',
 }
 
 export function setModeUI(mode, isHost) {

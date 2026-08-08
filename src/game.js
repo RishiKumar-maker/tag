@@ -5,6 +5,7 @@ import { Minimap } from './minimap.js'
 import { Network } from './network.js'
 import { buildCar } from './carLibrary.js'
 import { AbilityManager, randomAbilityId, abilityName, SHOCKWAVE_RADIUS } from './abilities.js'
+import { buildTrafficCars, updateTrafficCars, checkTrafficCollision, clearTrafficCars } from './traffic.js'
 import * as ui from './ui.js'
 import {
   PLAYER_COLORS, hexToCss, TAG_RADIUS, CHASER_IMMUNITY_MS, CHASER_SPEED_MULTIPLIER,
@@ -14,6 +15,7 @@ import {
 } from './constants.js'
 
 const STATE_SEND_INTERVAL_MS = 1000 / STATE_SEND_HZ
+const MAP_BY_MODE = { classic: 'arena', infection: 'arena', practice: 'arena', race: 'traffic' }
 
 export class Game {
   constructor() {
@@ -48,6 +50,13 @@ export class Game {
     this.inventory = null // held ability id, or null
     this.itemBoxState = new Map() // boxIndex -> timestamp when it respawns (absent/past = active)
 
+    this.trafficCars = []
+    this.raceStartTime = 0
+    this.crashedPlayers = new Set()
+    this.distanceByPlayer = new Map()
+    this.lapsByPlayer = new Map()
+    this._lastWaypointIndex = new Map()
+
     this._bindNetwork()
   }
 
@@ -71,24 +80,30 @@ export class Game {
 
       if (this.roundActive) {
         this.roundPlayers = this.roundPlayers.filter((p) => p.id !== peerId)
-        this.chaserSet.delete(peerId)
+        this.crashedPlayers.delete(peerId)
 
-        if (this.chaserSet.size === 0 && this.roundPlayers.length > 0) {
-          // deterministic so every peer promotes the same replacement without any extra messages
-          const next = [...this.roundPlayers].sort((a, b) => a.id.localeCompare(b.id))[0]
-          this.chaserSet.add(next.id)
-          this.immunityUntil.set(next.id, Date.now() + CHASER_IMMUNITY_MS)
-          if (this.mode === 'classic') {
-            const last = this.chaserIntervals[this.chaserIntervals.length - 1]
-            if (last && last.end === null) last.end = Date.now()
-            this.chaserIntervals.push({ id: next.id, start: Date.now(), end: null })
+        if (this.mode === 'race') {
+          if (this.network.isHost) this._maybeEndRace()
+        } else {
+          this.chaserSet.delete(peerId)
+
+          if (this.chaserSet.size === 0 && this.roundPlayers.length > 0) {
+            // deterministic so every peer promotes the same replacement without any extra messages
+            const next = [...this.roundPlayers].sort((a, b) => a.id.localeCompare(b.id))[0]
+            this.chaserSet.add(next.id)
+            this.immunityUntil.set(next.id, Date.now() + CHASER_IMMUNITY_MS)
+            if (this.mode === 'classic') {
+              const last = this.chaserIntervals[this.chaserIntervals.length - 1]
+              if (last && last.end === null) last.end = Date.now()
+              this.chaserIntervals.push({ id: next.id, start: Date.now(), end: null })
+            }
+            this._updateChaserVisuals()
+            this._updateStatusBanner()
           }
-          this._updateChaserVisuals()
-          this._updateStatusBanner()
-        }
 
-        if (this.roundPlayers.length < 2 && this.network.isHost) {
-          this._hostEndRound(Date.now())
+          if (this.roundPlayers.length < 2 && this.network.isHost) {
+            this._hostEndRound(Date.now())
+          }
         }
       }
       this._refreshLobbyUI()
@@ -132,6 +147,14 @@ export class Game {
         this.particles.spawnTagBurst(car.position.x, car.position.z, 0xff8c69)
       }
       if (useId) this.abilityManager?.removeProjectile(useId)
+    }
+
+    net.onPlayerCrash = ({ distance }, peerId) => {
+      this.crashedPlayers.add(peerId)
+      this.distanceByPlayer.set(peerId, distance)
+      const car = this.cars.get(peerId)
+      if (car && this.particles) this.particles.spawnTagBurst(car.position.x, car.position.z, 0xffffff)
+      if (this.mode === 'race' && this.network.isHost) this._maybeEndRace()
     }
   }
 
@@ -196,7 +219,7 @@ export class Game {
     this.chaserSet = new Set()
 
     ui.showScreen('game')
-    this._setupSceneIfNeeded()
+    this._setupSceneIfNeeded('arena')
     await this._spawnRoundCars()
     ui.setHudMode('Practice')
     ui.setPracticeHud(true)
@@ -224,17 +247,26 @@ export class Game {
   async startRound() {
     if (!this.network.isHost) return
     const players = [...this.roster.values()]
-    if (players.length < 2) {
+    if (players.length < 1) {
+      ui.toast('Need at least 1 player to start.')
+      return
+    }
+    if (this.mode !== 'race' && players.length < 2) {
       ui.toast('Need at least 2 players to start.')
       return
     }
-    const chaser = players[Math.floor(Math.random() * players.length)]
-    const payload = {
-      mode: this.mode,
-      players,
-      chaserId: chaser.id,
-      startTime: Date.now(),
-      durationMs: this.mode === 'infection' ? INFECTION_DURATION_MS : CLASSIC_DURATION_MS,
+    let payload
+    if (this.mode === 'race') {
+      payload = { mode: this.mode, players, startTime: Date.now() }
+    } else {
+      const chaser = players[Math.floor(Math.random() * players.length)]
+      payload = {
+        mode: this.mode,
+        players,
+        chaserId: chaser.id,
+        startTime: Date.now(),
+        durationMs: this.mode === 'infection' ? INFECTION_DURATION_MS : CLASSIC_DURATION_MS,
+      }
     }
     this.network.sendRoundStart(payload)
     await this._beginRound(payload)
@@ -245,20 +277,38 @@ export class Game {
   async _beginRound(payload) {
     this.mode = payload.mode
     this.roundPlayers = payload.players
-    this.roundDurationMs = payload.durationMs
-    this.roundStartTime = payload.startTime
     this.roundActive = true
     this.roundEnded = false
-    this.chaserSet = new Set([payload.chaserId])
-    this.catchOrder = []
-    this.chaserIntervals = [{ id: payload.chaserId, start: payload.startTime, end: null }]
-    this.immunityUntil = new Map([[payload.chaserId, payload.startTime + CHASER_IMMUNITY_MS]])
+
+    if (this.mode === 'race') {
+      this.raceStartTime = payload.startTime
+      this.crashedPlayers = new Set()
+      this.distanceByPlayer = new Map(this.roundPlayers.map((p) => [p.id, 0]))
+      this.lapsByPlayer = new Map()
+      this._lastWaypointIndex = new Map()
+      this.chaserSet = new Set()
+    } else {
+      this.roundDurationMs = payload.durationMs
+      this.roundStartTime = payload.startTime
+      this.chaserSet = new Set([payload.chaserId])
+      this.catchOrder = []
+      this.chaserIntervals = [{ id: payload.chaserId, start: payload.startTime, end: null }]
+      this.immunityUntil = new Map([[payload.chaserId, payload.startTime + CHASER_IMMUNITY_MS]])
+    }
 
     ui.showScreen('game')
-    this._setupSceneIfNeeded()
+    this._setupSceneIfNeeded(MAP_BY_MODE[this.mode] || 'arena')
     await this._spawnRoundCars()
-    ui.setHudMode(this.mode === 'infection' ? 'Infection' : 'Classic')
-    this._updateStatusBanner()
+
+    if (this.mode === 'race') {
+      this.trafficCars = buildTrafficCars(this.scene, this.scene.waypoints, this.scene.loopLength)
+      ui.setHudMode('Traffic Dash')
+      ui.setPracticeHud(true) // reuse: hides the timer pill + minimap, neither apply to this mode
+      ui.setStatusBanner('Go!', 'runner')
+    } else {
+      ui.setHudMode(this.mode === 'infection' ? 'Infection' : 'Classic')
+      this._updateStatusBanner()
+    }
     this._resetItemsAndAbilities()
   }
 
@@ -270,10 +320,17 @@ export class Game {
     if (this.scene) for (let i = 0; i < this.scene.itemBoxes.length; i++) this.scene.setItemBoxVisible(i, true)
   }
 
-  _setupSceneIfNeeded() {
-    if (this.scene) return
+  _setupSceneIfNeeded(mapId) {
+    if (this.scene && this.scene.mapId === mapId) return
+    if (this.scene) {
+      clearTrafficCars(this.scene, this.trafficCars)
+      this.trafficCars = []
+      for (const car of this.cars.values()) this.scene.removeCar(car.mesh)
+      this.scene.dispose()
+      this.scene = null
+    }
     try {
-      this.scene = new GameScene(ui.getGameCanvas())
+      this.scene = new GameScene(ui.getGameCanvas(), mapId)
       this.particles = new ParticleSystem(this.scene.scene)
       this.minimap = new Minimap(ui.getMinimapCanvas(), ARENA_RADIUS)
       this.abilityManager = new AbilityManager(this.scene)
@@ -295,12 +352,21 @@ export class Game {
     )
 
     this.roundPlayers.forEach((p, i) => {
-      const angle = (i / n) * Math.PI * 2
-      const radius = 6
       const { vehicle, wheels } = built[i]
       const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId, vehicle, wheels, name: p.name })
-      car.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
-      car.heading = angle + Math.PI
+
+      if (this.mode === 'race') {
+        const start = this.scene.waypoints[0]
+        const spacing = Math.min(3, (this.scene.trackHalfWidth * 1.7) / Math.max(n, 1))
+        const zOffset = (i - (n - 1) / 2) * spacing
+        car.position.set(start.x - (i % 3) * 2.2, 0, start.z + zOffset)
+        car.heading = Math.PI / 2 // facing +X, matching the track's starting direction
+      } else {
+        const angle = (i / n) * Math.PI * 2
+        const radius = 6
+        car.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
+        car.heading = angle + Math.PI
+      }
       car.mesh.position.copy(car.position)
       car.mesh.rotation.y = car.heading
       this.scene.addCar(car.mesh)
@@ -332,7 +398,9 @@ export class Game {
     this._elapsed += dt
 
     const localCar = this.cars.get(this.localId)
-    if (localCar) {
+    const localCrashed = this.crashedPlayers.has(this.localId)
+
+    if (localCar && !localCrashed) {
       localCar.applyInput(input)
       localCar.step(dt)
       this._resolveCollisions(localCar)
@@ -354,25 +422,83 @@ export class Game {
         )
       }
       this._updateSpeedometer(localCar)
-      this._checkItemPickup(localCar)
+
+      if (this.mode === 'race') this._checkTrafficCollision(localCar)
+      else this._checkItemPickup(localCar)
     }
 
     for (const [id, car] of this.cars) {
-      if (id !== this.localId) car.stepRemote(dt)
+      if (id !== this.localId && !this.crashedPlayers.has(id)) car.stepRemote(dt)
     }
 
     this.particles.update(dt)
-    this.scene.animateItemBoxes(dt, this._elapsed)
-    this.abilityManager?.update(dt, this.cars)
-    this._checkAbilityHits(localCar)
+
+    if (this.mode === 'race') {
+      const raceElapsed = (Date.now() - this.raceStartTime) / 1000
+      updateTrafficCars(this.trafficCars, raceElapsed, this.scene.waypoints, this.scene.loopLength)
+      this._updateRaceProgress()
+    } else {
+      this.scene.animateItemBoxes(dt, this._elapsed)
+      this.abilityManager?.update(dt, this.cars)
+      this._checkAbilityHits(localCar)
+    }
 
     if (localCar) this.scene.updateCamera(localCar, dt)
     this.scene.render()
 
     this._maybeSendState()
-    this._checkTagging()
-    this._updateTimerUI()
-    this._updateMinimap()
+
+    if (this.mode !== 'race') {
+      this._checkTagging()
+      this._updateTimerUI()
+      this._updateMinimap()
+    }
+  }
+
+  _checkTrafficCollision(localCar) {
+    if (checkTrafficCollision(localCar, this.trafficCars, PHYSICS.carRadius)) {
+      this._crashLocalPlayer()
+    }
+  }
+
+  _crashLocalPlayer() {
+    if (this.crashedPlayers.has(this.localId)) return
+    const distance = this.distanceByPlayer.get(this.localId) || 0
+    this.crashedPlayers.add(this.localId)
+    this.network.sendPlayerCrash({ distance, timestamp: Date.now() })
+    const car = this.cars.get(this.localId)
+    if (car && this.particles) this.particles.spawnTagBurst(car.position.x, car.position.z, 0xff6b5c)
+    ui.setStatusBanner(`Crashed — ${Math.round(distance)}m`, 'chaser')
+    if (this.network.isHost) this._maybeEndRace()
+  }
+
+  _updateRaceProgress() {
+    const n = this.scene.waypoints.length
+    for (const p of this.roundPlayers) {
+      if (this.crashedPlayers.has(p.id)) continue
+      const car = this.cars.get(p.id)
+      if (!car) continue
+      const { index } = this.scene.findClosestWaypoint(car.position.x, car.position.z)
+      const prevIndex = this._lastWaypointIndex.get(p.id) ?? index
+      let loops = this.lapsByPlayer.get(p.id) || 0
+      if (prevIndex > n * 0.75 && index < n * 0.25) {
+        loops++
+        this.lapsByPlayer.set(p.id, loops)
+      }
+      this._lastWaypointIndex.set(p.id, index)
+      this.distanceByPlayer.set(p.id, loops * this.scene.loopLength + (index / n) * this.scene.loopLength)
+    }
+
+    if (!this.crashedPlayers.has(this.localId)) {
+      const d = this.distanceByPlayer.get(this.localId) || 0
+      ui.setStatusBanner(`${Math.round(d)}m`, 'runner')
+    }
+  }
+
+  _maybeEndRace() {
+    if (this.roundEnded || this.roundPlayers.length === 0) return
+    const allCrashed = this.roundPlayers.every((p) => this.crashedPlayers.has(p.id))
+    if (allCrashed) this._hostEndRound(Date.now())
   }
 
   _checkItemPickup(localCar) {
@@ -447,18 +573,22 @@ export class Game {
   }
 
   _resolveCollisions(car) {
-    const distFromCenter = Math.hypot(car.position.x, car.position.z)
-    const maxDist = ARENA_RADIUS - PHYSICS.carRadius
-    if (distFromCenter > maxDist) {
-      const scale = maxDist / distFromCenter
-      car.position.x *= scale
-      car.position.z *= scale
-      const nx = car.position.x / maxDist
-      const nz = car.position.z / maxDist
-      const vDotN = car.velocity.x * nx + car.velocity.z * nz
-      if (vDotN > 0) {
-        car.velocity.x -= vDotN * nx
-        car.velocity.z -= vDotN * nz
+    if (this.mode === 'race') {
+      this._resolveTrackBoundary(car)
+    } else {
+      const distFromCenter = Math.hypot(car.position.x, car.position.z)
+      const maxDist = ARENA_RADIUS - PHYSICS.carRadius
+      if (distFromCenter > maxDist) {
+        const scale = maxDist / distFromCenter
+        car.position.x *= scale
+        car.position.z *= scale
+        const nx = car.position.x / maxDist
+        const nz = car.position.z / maxDist
+        const vDotN = car.velocity.x * nx + car.velocity.z * nz
+        if (vDotN > 0) {
+          car.velocity.x -= vDotN * nx
+          car.velocity.z -= vDotN * nz
+        }
       }
     }
 
@@ -491,6 +621,24 @@ export class Game {
         const push = (minDist - dist) * 0.5
         car.position.x += (dx / dist) * push
         car.position.z += (dz / dist) * push
+      }
+    }
+  }
+
+  _resolveTrackBoundary(car) {
+    const { index, distance } = this.scene.findClosestWaypoint(car.position.x, car.position.z)
+    const maxDist = this.scene.trackHalfWidth - 0.3
+    if (distance > maxDist && distance > 0.0001) {
+      const wp = this.scene.waypoints[index]
+      const nx = (car.position.x - wp.x) / distance
+      const nz = (car.position.z - wp.z) / distance
+      const push = distance - maxDist
+      car.position.x -= nx * push
+      car.position.z -= nz * push
+      const vDotN = car.velocity.x * nx + car.velocity.z * nz
+      if (vDotN > 0) {
+        car.velocity.x -= vDotN * nx
+        car.velocity.z -= vDotN * nz
       }
     }
   }
@@ -592,19 +740,26 @@ export class Game {
     this.roundActive = false
     this.roundEnded = true
 
-    const last = this.chaserIntervals[this.chaserIntervals.length - 1]
-    if (last && last.end === null) last.end = endTime
+    let results, title
+    if (this.mode === 'race') {
+      results = this._computeRaceResults()
+      title = 'Traffic Dash Results'
+    } else {
+      const last = this.chaserIntervals[this.chaserIntervals.length - 1]
+      if (last && last.end === null) last.end = endTime
+      results = this.mode === 'infection' ? this._computeInfectionResults() : this._computeClassicResults(endTime)
+      title = this.mode === 'infection' ? 'Infection Results' : 'Round Results'
+    }
 
-    const results = this.mode === 'infection'
-      ? this._computeInfectionResults()
-      : this._computeClassicResults(endTime)
-
-    ui.setResults({
-      title: this.mode === 'infection' ? 'Infection Results' : 'Round Results',
-      rows: results,
-      isHost: this.network.isHost,
-    })
+    ui.setResults({ title, rows: results, isHost: this.network.isHost })
     ui.showScreen('results')
+  }
+
+  _computeRaceResults() {
+    return [...this.roundPlayers]
+      .map((p) => ({ ...p, distance: this.distanceByPlayer.get(p.id) || 0 }))
+      .sort((a, b) => b.distance - a.distance)
+      .map((p) => ({ name: p.name, color: p.color, detail: `${Math.round(p.distance)}m` }))
   }
 
   _computeClassicResults(endTime) {
@@ -651,7 +806,13 @@ export class Game {
     this.roster.clear()
     if (this.scene) {
       for (const car of this.cars.values()) this.scene.removeCar(car.mesh)
+      clearTrafficCars(this.scene, this.trafficCars)
     }
+    this.trafficCars = []
+    this.crashedPlayers.clear()
+    this.distanceByPlayer.clear()
+    this.lapsByPlayer.clear()
+    this._lastWaypointIndex.clear()
     this.cars.clear()
     this.abilityManager?.clear()
     this.inventory = null
