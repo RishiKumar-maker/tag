@@ -24,6 +24,12 @@ to GitHub Pages.
   arrows to cycle through it. Three low-poly procedural cars (Roadster,
   Sport Coupe, Big Truck) plus a detailed Police Cruiser model. Your choice
   applies whether you create, join, or practice.
+- **Traffic Dash** — a third mode with its own map: an endless loop track
+  full of traffic to weave through. No lap limit, no clock — one crash
+  ends your run, and whoever covers the most distance wins. Traffic creeps
+  faster the longer anyone survives, so it stays a genuine test over a long
+  run rather than a solved pattern. Works solo too (start a room by
+  yourself and go).
 - The **chaser drives faster** than everyone else (top speed and
   acceleration both boosted) — it passes to whoever is "it" automatically,
   in both Classic and Infection.
@@ -137,6 +143,9 @@ src/
   carPreview.js             the menu's live rotating car preview (own tiny 3D scene)
   abilities.js              ability registry + hazard/projectile simulation and hit detection
   scene.js                  Three.js scene, chase camera, arena, lighting, item box spawns
+                             -- and now a second map: an endless traffic-weaving loop track
+  traffic.js                deterministic traffic-obstacle placement, movement, and collision
+                             (computed purely from elapsed time -- needs no network sync at all)
   particles.js              drift smoke / tag-burst effects
   minimap.js                top-down minimap overlay
   ui.js                     all DOM manipulation, isolated from game logic
