@@ -46,8 +46,19 @@ button, input { font-family: inherit; }
 }
 .screen.active { display: flex; }
 
+/* Menu-style screens scroll when their card is taller than the viewport (a phone held sideways),
+   and still centre it when there's room. `margin-block: auto` does both; plain justify-content:center
+   would clip the top and bottom with no way to scroll to them. */
+.screen:not(#screen-game) {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  justify-content: flex-start;
+  padding: calc(14px + env(safe-area-inset-top)) 0 calc(14px + env(safe-area-inset-bottom));
+}
+.screen:not(#screen-game) > .glass-card { margin-block: auto; flex-shrink: 0; }
+
 .bg-horizon {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 0;
   background:
@@ -515,61 +526,46 @@ button, input { font-family: inherit; }
   body.has-touch .fullscreen-btn { display: flex; }
 }
 
+/* Touch layer: sits above the whole game; src/touchControls.js sets each
+   button's left/top (its centre) and --s (its size multiplier). */
 .touch-controls {
   display: none;
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 5;
-}
-body.has-touch .touch-controls { display: block; }
-
-body.has-touch .minimap-wrap {
-  bottom: auto;
-  top: 64px;
-}
-body.has-touch .speedo-wrap {
-  bottom: auto;
-  top: 64px;
-}
-body.has-touch .inventory-wrap {
-  bottom: auto;
-  top: 64px;
-  left: auto;
-  right: 50%;
-  transform: translateX(50%);
-}
-
-.touch-side {
-  position: absolute;
-  bottom: calc(18px + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  z-index: 8;
   pointer-events: none;
 }
-.touch-left {
-  left: calc(18px + env(safe-area-inset-left));
-  align-items: center;
-}
-.touch-right {
-  right: calc(18px + env(safe-area-inset-right));
-  align-items: flex-end;
-}
+body.has-touch[data-screen="game"] .touch-controls,
+body.editing-controls .touch-controls { display: block; }
+body.editing-controls .touch-controls { z-index: 25; }
+
+/* on touch screens the readouts move to the top so thumbs own the bottom */
+body.has-touch .minimap-wrap { bottom: auto; top: 64px; }
+body.has-touch .speedo-wrap { bottom: auto; top: 64px; transform: scale(0.8); transform-origin: top left; }
+/* just under the status banner (top: 70px), which it used to sit exactly on top of */
+body.has-touch .inventory-wrap { bottom: auto; top: 128px; left: auto; right: 50%; transform: translateX(50%); }
 
 .touch-btn {
+  --s: 1;
+  --base: 60px;
+  position: absolute;
+  transform: translate(-50%, -50%);
   pointer-events: auto;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
   touch-action: none;
+  opacity: var(--tc-opacity, 0.85);
   border: 1px solid var(--glass-border);
   background: var(--glass-strong);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: var(--text-primary);
   border-radius: 50%;
-  width: 60px;
-  height: 60px;
-  font-size: 24px;
+  width: calc(var(--base) * var(--s));
+  height: calc(var(--base) * var(--s));
+  font-size: calc(24px * var(--s));
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -579,21 +575,112 @@ body.has-touch .inventory-wrap {
   color: #241528;
   border-color: transparent;
 }
-
-.touch-pedal-col { display: flex; flex-direction: column; gap: 10px; }
-.touch-steer-row { display: flex; gap: 10px; }
-.touch-accel { width: 72px; height: 72px; font-size: 28px; }
-
-.touch-drift, .touch-use {
-  border-radius: var(--radius-md);
+.touch-accel { --base: 72px; font-size: calc(28px * var(--s)); }
+.touch-pill {
   width: auto;
-  height: 42px;
-  padding: 0 18px;
+  height: calc(42px * var(--s));
+  padding: 0 calc(18px * var(--s));
+  border-radius: var(--radius-md);
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 13px;
+  font-size: calc(13px * var(--s));
 }
-.touch-use { border-color: var(--accent-coral); }
+#btn-touch-use { border-color: var(--accent-coral); }
+
+/* ---------- controls editor ---------- */
+.controls-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 40px 40px,
+    rgba(18, 11, 30, 0.96);
+  touch-action: none;
+}
+.controls-editor.hidden, .controls-panel.hidden { display: none; }
+body.editing-controls .touch-btn { cursor: grab; }
+body.editing-controls .touch-btn.selected {
+  outline: 2px dashed var(--accent-mint);
+  outline-offset: 4px;
+}
+.ghost {
+  position: absolute;
+  top: 64px;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: var(--radius-md);
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.ghost-speedo { left: 20px; width: 118px; height: 90px; }
+.ghost-item { left: 50%; top: 128px; width: 90px; height: 32px; transform: translateX(-50%); }
+.ghost-map { right: 20px; width: 100px; height: 100px; }
+
+.controls-panel {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(760px, calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.controls-panel-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.controls-title { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin-right: auto; }
+.controls-presets { margin-top: 0; min-width: 180px; }
+.controls-presets .segment { padding: 7px 10px; }
+.controls-actions { display: flex; gap: 6px; }
+.controls-sliders { gap: 6px 22px; }
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1 1 220px;
+}
+.slider-row.disabled { opacity: 0.45; }
+.slider-row input[type="range"] { flex: 1; min-width: 80px; accent-color: var(--accent-mint); }
+.slider-row output { min-width: 38px; text-align: right; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.controls-hint { margin: 0; font-size: 11.5px; color: var(--text-muted); line-height: 1.4; }
+
+/* buttons that only make sense on touch screens */
+.touch-only { display: none; }
+body.has-touch .touch-only { display: inline-flex; justify-content: center; }
+
+/* ---------- sound button ---------- */
+.sound-btn { display: none; }
+body.has-audio .sound-btn { display: inline-flex; align-items: center; justify-content: center; }
+.sound-btn-floating {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  z-index: 15;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text-primary);
+  font-size: 18px;
+  cursor: pointer;
+}
+body[data-screen="game"] .sound-btn-floating { display: none !important; }
+.sound-btn.is-muted { opacity: 0.55; }
 
 /* ---------- how to play overlay ---------- */
 .help-overlay {
