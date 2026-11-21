@@ -2,6 +2,8 @@ import * as THREE from '../lib/three.module.min.js'
 import {
   CHASER_SPEED_MULTIPLIER, STUN_MS, SLIP_MS, SLIP_TRACTION, BOOST_MS, BOOST_MULTIPLIER, SHIELD_MS,
 } from './constants.js'
+import { CarAnimator } from './carAnimation.js'
+import { createShieldVisual, createBoostFlames } from './abilityModels.js'
 
 // Tuned constants for the arcade drift model. Feel free to nudge these.
 export const PHYSICS = {
@@ -63,7 +65,7 @@ function createNameSprite(name) {
 }
 
 export class Car {
-  constructor({ color = 0xff8c69, isLocal = false, vehicle, wheels, name = '' } = {}) {
+  constructor({ color = 0xff8c69, isLocal = false, vehicle, wheels, dims, name = '' } = {}) {
     this.isLocal = isLocal
     this.color = color
 
@@ -72,7 +74,7 @@ export class Car {
     this.velocity = new THREE.Vector3()
     this.speed = 0
     this.isDrifting = false
-    this.steerVisual = 0
+    this.speedFraction = 0 // |speed| / this car's current top speed, 0..1 (camera + audio)
     this.isChaser = false
     this.statusEffects = { stunnedUntil: 0, slippingUntil: 0, boostUntil: 0, shieldUntil: 0 }
 
@@ -83,12 +85,21 @@ export class Car {
     this._right = new THREE.Vector3()
 
     this.wheels = wheels || []
+    this.dims = dims || { rearWheelX: 0.83, rearWheelZ: -0.85, rearZ: -1.3, exhaustX: 0.42, exhaustY: 0.34 }
     this.mesh = this._assembleMesh(vehicle, name)
+    this.animator = new CarAnimator({ body: this.body, wheels: this.wheels })
   }
 
   _assembleMesh(vehicle, name) {
     const group = new THREE.Group()
-    if (vehicle) group.add(vehicle)
+    // Only the vehicle sits in `body`, so roll/pitch tilts the car without
+    // tilting its shadow, status ring or name tag.
+    this.body = new THREE.Group()
+    if (vehicle) this.body.add(vehicle)
+    group.add(this.body)
+
+    this.boostFlames = createBoostFlames(this.dims)
+    this.body.add(this.boostFlames.object)
 
     const shadow = new THREE.Mesh(
       new THREE.CircleGeometry(1.5, 16),
@@ -110,14 +121,8 @@ export class Car {
 
     if (name) group.add(createNameSprite(name))
 
-    const shield = new THREE.Mesh(
-      new THREE.SphereGeometry(1.7, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0x7ec8e3, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false })
-    )
-    shield.position.y = 0.9
-    shield.visible = false
-    group.add(shield)
-    this.shieldMesh = shield
+    this.shield = createShieldVisual()
+    group.add(this.shield.object)
 
     return group
   }
@@ -135,6 +140,10 @@ export class Car {
 
   isShielded(now = Date.now()) {
     return now < this.statusEffects.shieldUntil
+  }
+
+  isBoosted(now = Date.now()) {
+    return now < this.statusEffects.boostUntil
   }
 
   setChaserVisual(isChaser, teamColorHex) {
@@ -176,7 +185,6 @@ export class Car {
 
     const turnBoost = this.isDrifting ? PHYSICS.driftTurnBoost : 1
     this.heading += effectiveSteer * PHYSICS.turnRateBase * speedFactor * turnBoost * dt
-    this.steerVisual = THREE.MathUtils.lerp(this.steerVisual, steer * 0.5, 0.2)
 
     this._forward.set(Math.sin(this.heading), 0, Math.cos(this.heading))
     this._right.set(Math.cos(this.heading), 0, -Math.sin(this.heading))
@@ -196,18 +204,35 @@ export class Car {
     this.velocity.copy(this._forward).multiplyScalar(forwardSpeed).addScaledVector(this._right, lateralSpeed)
     this.position.addScaledVector(this.velocity, dt)
     this.speed = forwardSpeed
+    this.speedFraction = THREE.MathUtils.clamp(Math.abs(forwardSpeed) / maxForward, 0, 1)
+    this.slipping = slipping
 
-    this._syncMesh()
+    this._animate(dt, steer)
   }
 
   /** Remote cars don't run physics locally; they smoothly chase the last network snapshot. */
   stepRemote(dt) {
     if (!this.netTarget) return
+    dt = Math.max(dt, 0.0001)
     const t = 1 - Math.exp(-REMOTE_SMOOTH_DECAY * dt)
+    const px = this.position.x
+    const pz = this.position.z
     this.position.lerp(this.netTarget.position, t)
     this.heading = this._lerpAngle(this.heading, this.netTarget.heading, t)
     this.isDrifting = this.netTarget.isDrifting
-    this._syncMesh()
+
+    // No physics for remote cars, so infer their velocity from how far the
+    // smoothed position moved. That's all the animator needs to roll, spin
+    // and skid them the same way as the local car.
+    const k = 1 - Math.exp(-10 * dt)
+    this.velocity.x += ((this.position.x - px) / dt - this.velocity.x) * k
+    this.velocity.z += ((this.position.z - pz) / dt - this.velocity.z) * k
+    this._forward.set(Math.sin(this.heading), 0, Math.cos(this.heading))
+    this.speed = this.velocity.dot(this._forward)
+    this.speedFraction = THREE.MathUtils.clamp(Math.abs(this.speed) / PHYSICS.maxForwardSpeed, 0, 1)
+    this.slipping = Date.now() < this.statusEffects.slippingUntil
+
+    this._animate(dt, null)
   }
 
   setNetworkSnapshot(x, z, heading, isDrifting) {
@@ -225,12 +250,26 @@ export class Car {
     return a + diff * t
   }
 
-  _syncMesh() {
+  /** Feed the animator this frame's motion, then place the mesh. */
+  _animate(dt, steerInput) {
+    this._forward.set(Math.sin(this.heading), 0, Math.cos(this.heading))
+    this._right.set(Math.cos(this.heading), 0, -Math.sin(this.heading)) // +X side when heading is 0, i.e. the car's left
+    this.animator.update(dt, {
+      heading: this.heading,
+      forwardSpeed: this.velocity.dot(this._forward),
+      lateralSpeed: this.velocity.dot(this._right),
+      steer: steerInput,
+      isDrifting: this.isDrifting,
+      slipping: !!this.slipping,
+    })
+    this._syncMesh(dt)
+  }
+
+  _syncMesh(dt) {
     this.mesh.position.copy(this.position)
     this.mesh.rotation.y = this.heading
-    for (const w of this.wheels) {
-      if (w.isFront) w.pivot.rotation.y = this.steerVisual
-    }
-    if (this.shieldMesh) this.shieldMesh.visible = this.isShielded()
+    const now = Date.now()
+    this.shield.update(dt, this.statusEffects.shieldUntil - now)
+    this.boostFlames.update(dt, this.isBoosted(now))
   }
 }

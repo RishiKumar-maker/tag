@@ -12,17 +12,34 @@ export function getCarTypes() {
   return CAR_TYPES
 }
 
+const hubMat = new THREE.MeshLambertMaterial({ color: 0xd9d0e6, flatShading: true })
+
+// Each wheel is pivot (steering, Y) -> spin (rolling, X) -> mesh. The hub bar
+// on the outer face is what makes the rolling visible: a plain cylinder looks
+// identical however fast it turns.
 function buildWheelPivots(parentGroup, material, specs, radius, width) {
   const geo = new THREE.CylinderGeometry(radius, radius, width, 10)
+  const hubGeo = new THREE.BoxGeometry(0.035, radius * 1.55, radius * 0.3)
   return specs.map((spec) => {
     const pivot = new THREE.Group()
     pivot.position.set(spec.x, spec.y, spec.z)
+    const spin = new THREE.Group()
     const wheelMesh = new THREE.Mesh(geo, material)
     wheelMesh.rotation.z = Math.PI / 2
-    pivot.add(wheelMesh)
+    spin.add(wheelMesh)
+    const hub = new THREE.Mesh(hubGeo, hubMat)
+    hub.position.x = Math.sign(spec.x) * (width / 2 + 0.004)
+    spin.add(hub)
+    pivot.add(spin)
     parentGroup.add(pivot)
-    return { pivot, isFront: spec.front }
+    return { pivot, spin, isFront: spec.front }
   })
+}
+
+/** What the effects code needs to know about a car's shape: where the rear
+ * tyres touch the ground (skid marks, smoke) and where boost flames mount. */
+function carDims({ rearWheelX, rearWheelZ, rearZ, exhaustX, exhaustY = 0.34 }) {
+  return { rearWheelX, rearWheelZ, rearZ, exhaustX, exhaustY }
 }
 
 // ---------------- procedural cars ----------------
@@ -52,7 +69,7 @@ function buildRoadster(colorHex) {
     { x: 0.83, y: 0.34, z: -0.85, front: false },
   ], 0.34, 0.32)
 
-  return Promise.resolve({ vehicle: group, wheels })
+  return Promise.resolve({ vehicle: group, wheels, dims: carDims({ rearWheelX: 0.83, rearWheelZ: -0.85, rearZ: -1.3, exhaustX: 0.42 }) })
 }
 
 function buildSport(colorHex) {
@@ -91,7 +108,7 @@ function buildSport(colorHex) {
     { x: 0.8, y: 0.3, z: -0.95, front: false },
   ], 0.3, 0.3)
 
-  return Promise.resolve({ vehicle: group, wheels })
+  return Promise.resolve({ vehicle: group, wheels, dims: carDims({ rearWheelX: 0.8, rearWheelZ: -0.95, rearZ: -1.45, exhaustX: 0.4, exhaustY: 0.3 }) })
 }
 
 function buildTruck(colorHex) {
@@ -134,7 +151,7 @@ function buildTruck(colorHex) {
     { x: 0.88, y: 0.4, z: -1.05, front: false },
   ], 0.4, 0.36)
 
-  return Promise.resolve({ vehicle: group, wheels })
+  return Promise.resolve({ vehicle: group, wheels, dims: carDims({ rearWheelX: 0.88, rearWheelZ: -1.05, rearZ: -1.7, exhaustX: 0.5, exhaustY: 0.4 }) })
 }
 
 // ---------------- GLB car (police cruiser) ----------------
@@ -154,21 +171,25 @@ function loadPoliceTemplate() {
       (gltf) => {
         const scene = gltf.scene
 
-        // turn the two front-wheel nodes into rotation pivots centered on
-        // their own geometry, same trick as the procedural cars' wheels,
-        // so steering can visually turn them.
+        // turn the wheel nodes into pivot -> spin -> mesh, centred on their
+        // own geometry, same structure as the procedural cars' wheels: the
+        // front pair can steer, and all of them can roll. (The rear pair is
+        // one merged mesh; spinning it about its own centre rolls both.)
         for (const child of [...scene.children]) {
-          if (/front(left|right)wheel/i.test(child.name)) {
-            const box = new THREE.Box3().setFromObject(child)
-            const center = box.getCenter(new THREE.Vector3())
-            const pivot = new THREE.Group()
-            pivot.userData.isFrontWheelPivot = true
-            pivot.position.copy(center)
-            scene.remove(child)
-            child.position.sub(center)
-            pivot.add(child)
-            scene.add(pivot)
-          }
+          const isFront = /front(left|right)wheel/i.test(child.name)
+          const isRear = /backwheel/i.test(child.name)
+          if (!isFront && !isRear) continue
+          const box = new THREE.Box3().setFromObject(child)
+          const center = box.getCenter(new THREE.Vector3())
+          const pivot = new THREE.Group()
+          const spin = new THREE.Group()
+          pivot.userData.wheelRole = isFront ? 'front' : 'rear'
+          pivot.position.copy(center)
+          scene.remove(child)
+          child.position.sub(center)
+          spin.add(child)
+          pivot.add(spin)
+          scene.add(pivot)
         }
 
         scene.traverse((obj) => {
@@ -203,7 +224,8 @@ async function buildPolice(colorHex) {
 
   const wheels = []
   vehicle.traverse((obj) => {
-    if (obj.userData.isFrontWheelPivot) wheels.push({ pivot: obj, isFront: true })
+    const role = obj.userData.wheelRole
+    if (role) wheels.push({ pivot: obj, spin: obj.children[0], isFront: role === 'front' })
   })
 
   // recolor only this instance's body panels; everything else (windows,
@@ -215,7 +237,13 @@ async function buildPolice(colorHex) {
     }
   })
 
-  return { vehicle, wheels }
+  // measured from the model (rear tyre centres sit at x=+-0.69, z=-1.15 before
+  // the POLICE_SCALE; the body ends at z=-1.87)
+  const dims = carDims({
+    rearWheelX: 0.69 * POLICE_SCALE, rearWheelZ: -1.155 * POLICE_SCALE, rearZ: -1.87 * POLICE_SCALE,
+    exhaustX: 0.4 * POLICE_SCALE, exhaustY: 0.4 * POLICE_SCALE,
+  })
+  return { vehicle, wheels, dims }
 }
 
 // ---------------- dispatcher ----------------

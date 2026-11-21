@@ -3,8 +3,11 @@ import * as ui from './ui.js'
 import { preloadModels, getCarTypes } from './carLibrary.js'
 import { CarPreview } from './carPreview.js'
 import { ABILITY_TYPES } from './abilities.js'
+import { touchState, initTouchControls, openEditor, applyLayout } from './touchControls.js'
+import * as audio from './audio.js'
 
 const game = new Game()
+if (new URLSearchParams(location.search).has('debug')) window.__game = game // console/test access: add ?debug to the URL
 preloadModels() // fetch the GLB car in the background as early as possible
 
 // ---------------- keyboard input ----------------
@@ -33,39 +36,39 @@ function readInput() {
 }
 
 // ---------------- touch controls ----------------
-const touchState = { left: false, right: false, forward: false, reverse: false, drift: false }
-
-const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+// Add ?touch to the URL to force the on-screen controls on a desktop browser (handy for testing the layout editor).
+const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || new URLSearchParams(location.search).has('touch')
 if (hasTouch) document.body.classList.add('has-touch')
 
-function bindHoldButton(id, key) {
-  const btn = document.getElementById(id)
-  const press = (e) => {
-    e.preventDefault()
-    if (e.pointerId != null) btn.setPointerCapture(e.pointerId)
-    touchState[key] = true
-    btn.classList.add('pressed')
-  }
-  const release = () => {
-    touchState[key] = false
-    btn.classList.remove('pressed')
-  }
-  btn.addEventListener('pointerdown', press)
-  btn.addEventListener('pointerup', release)
-  btn.addEventListener('pointercancel', release)
-  btn.addEventListener('pointerleave', release)
+initTouchControls({ onUse: () => game.useAbility() })
+ui.onScreenChange(() => requestAnimationFrame(applyLayout)) // buttons can only be measured once the game screen is showing
+document.getElementById('btn-edit-controls').addEventListener('click', openEditor)
+document.getElementById('btn-edit-controls-lobby').addEventListener('click', openEditor)
+
+// ---------------- sound ----------------
+// Browsers only allow audio after a tap/click/key press, so the first one wakes it up.
+for (const type of ['pointerdown', 'keydown', 'touchend']) {
+  window.addEventListener(type, () => audio.unlock(), { capture: true })
 }
+ui.onScreenChange((name) => audio.setMusicScene(name === 'game' ? 'game' : 'menu'))
+audio.setMusicScene('menu')
 
-bindHoldButton('btn-touch-left', 'left')
-bindHoldButton('btn-touch-right', 'right')
-bindHoldButton('btn-touch-accel', 'forward')
-bindHoldButton('btn-touch-reverse', 'reverse')
-bindHoldButton('btn-touch-drift', 'drift')
-
-document.getElementById('btn-touch-use').addEventListener('pointerdown', (e) => {
-  e.preventDefault()
-  game.useAbility()
+// small click for every menu button (not the driving buttons: those aren't "clicks")
+document.addEventListener('click', (e) => {
+  if (e.target.closest?.('button') && !e.target.closest('.touch-btn')) audio.play('ui_click')
 })
+
+// the mute buttons only appear once at least one sound file actually exists
+const soundButtons = [document.getElementById('btn-sound'), document.getElementById('btn-sound-hud')]
+function paintSoundButtons() {
+  for (const b of soundButtons) {
+    b.textContent = audio.isMuted() ? '\u{1F507}' : '\u{1F50A}'
+    b.classList.toggle('is-muted', audio.isMuted())
+  }
+}
+audio.onAudioAvailable(() => document.body.classList.add('has-audio'))
+for (const b of soundButtons) b.addEventListener('click', () => { audio.toggleMuted(); paintSoundButtons() })
+paintSoundButtons()
 
 // ---------------- fullscreen ----------------
 const fullscreenBtn = document.getElementById('btn-fullscreen')

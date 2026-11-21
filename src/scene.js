@@ -1,14 +1,10 @@
 import * as THREE from '../lib/three.module.min.js'
+import { cloneAbilityModel } from './abilityModels.js'
 
 export const ARENA_RADIUS = 44
-export const TRACK_STRAIGHT = 70
-export const TRACK_CURVE_RADIUS = 26
-export const TRACK_HALF_WIDTH = 9
 
 const SKY = 0xf6d9be
 const GROUND = 0x8fbfa0
-const TRACK_SKY = 0xdfd3ea
-const TRACK_GROUND = 0x6b6478
 
 // Deterministic pseudo-random so every client generates the identical layout.
 function seededRandom(seed) {
@@ -16,27 +12,14 @@ function seededRandom(seed) {
   return x - Math.floor(x)
 }
 
-/** A stadium (two straights + two semicircle ends) walked as a sequence of
- * waypoints. Used for the track shape, walls, traffic paths, and (by
- * finding the closest waypoint each frame) distance/progress tracking --
- * no separate checkpoint system needed. */
-export function buildStadiumWaypoints(straight, radius, curveSegs = 24) {
-  const pts = []
-  const half = straight / 2
-  pts.push({ x: -half, z: -radius })
-  pts.push({ x: half, z: -radius })
-  for (let i = 1; i <= curveSegs; i++) {
-    const a = -Math.PI / 2 + (Math.PI * i) / curveSegs
-    pts.push({ x: half + radius * Math.cos(a), z: radius * Math.sin(a) })
-  }
-  pts.push({ x: -half, z: radius })
-  for (let i = 1; i <= curveSegs; i++) {
-    const a = Math.PI / 2 + (Math.PI * i) / curveSegs
-    pts.push({ x: -half + radius * Math.cos(a), z: radius * Math.sin(a) })
-  }
-  pts.pop() // last point duplicates pts[0], closing the loop implicitly
-  return pts
+/** Each map is a method that fills `this.scene`, `this.colliders` and
+ * `this.itemBoxes`. To add a map: write a `_buildXxxMap()` below, register it
+ * here, and map a game mode to its id in game.js (MAP_BY_MODE). */
+const MAP_BUILDERS = {
+  arena: '_buildArenaMap',
 }
+
+const BASE_FOV = 64
 
 export class GameScene {
   constructor(canvas, mapId = 'arena') {
@@ -53,22 +36,18 @@ export class GameScene {
     this.renderer.shadowMap.enabled = false // fake blob shadows instead, real shadow maps are costly
 
     this.scene = new THREE.Scene()
-    this.camera = new THREE.PerspectiveCamera(64, 1, 0.1, 120)
+    this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 120)
     this.camera.position.set(0, 8, -10)
     this._camLook = new THREE.Vector3()
     this.followDistance = 7.2
     this.followHeight = 4.4
     this.camDecay = 7
 
-    this.itemBoxes = []
-    this.waypoints = null
-    this.trackHalfWidth = TRACK_HALF_WIDTH
+    this.reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-    if (mapId === 'traffic') {
-      this._buildTrafficMap()
-    } else {
-      this._buildArenaMap()
-    }
+    this.itemBoxes = []
+
+    this[MAP_BUILDERS[mapId] || MAP_BUILDERS.arena]()
 
     this.carGroup = new THREE.Group()
     this.scene.add(this.carGroup)
@@ -89,82 +68,6 @@ export class GameScene {
     this._buildFence()
     this._buildObstacles()
     this._buildItemBoxes()
-  }
-
-  _buildTrafficMap() {
-    this.scene.background = new THREE.Color(TRACK_SKY)
-    this.scene.fog = new THREE.Fog(TRACK_SKY, 55, 130)
-
-    const hemi = new THREE.HemisphereLight(0xe9defa, 0x5c5568, 1.1)
-    this.scene.add(hemi)
-    const sun = new THREE.DirectionalLight(0xffe9c9, 1.2)
-    sun.position.set(-25, 35, 15)
-    this.scene.add(sun)
-
-    this.waypoints = buildStadiumWaypoints(TRACK_STRAIGHT, TRACK_CURVE_RADIUS)
-    this.loopLength = TRACK_STRAIGHT * 2 + Math.PI * TRACK_CURVE_RADIUS
-
-    const groundW = TRACK_STRAIGHT + (TRACK_CURVE_RADIUS + TRACK_HALF_WIDTH) * 2 + 20
-    const groundD = (TRACK_CURVE_RADIUS + TRACK_HALF_WIDTH) * 2 + 20
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(groundW, groundD),
-      new THREE.MeshLambertMaterial({ color: TRACK_GROUND })
-    )
-    ground.rotation.x = -Math.PI / 2
-    this.scene.add(ground)
-
-    // lane markings: thin bright segments down the centerline, purely decorative
-    for (let i = 0; i < this.waypoints.length; i += 2) {
-      const wp = this.waypoints[i]
-      const mark = new THREE.Mesh(
-        new THREE.CircleGeometry(0.5, 6),
-        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18 })
-      )
-      mark.rotation.x = -Math.PI / 2
-      mark.position.set(wp.x, 0.02, wp.z)
-      this.scene.add(mark)
-    }
-
-    this._buildTrackWalls()
-  }
-
-  _buildTrackWalls() {
-    const wallMat = new THREE.MeshLambertMaterial({ color: 0xada0c9, flatShading: true })
-    const wallGeo = new THREE.BoxGeometry(1.3, 1.1, 1.3)
-    const n = this.waypoints.length
-    for (let i = 0; i < n; i += 2) {
-      const wp = this.waypoints[i]
-      const next = this.waypoints[(i + 1) % n]
-      const dx = next.x - wp.x
-      const dz = next.z - wp.z
-      const len = Math.hypot(dx, dz) || 1
-      const perpX = -dz / len
-      const perpZ = dx / len
-
-      const inner = new THREE.Mesh(wallGeo, wallMat)
-      inner.position.set(wp.x - perpX * this.trackHalfWidth, 0.55, wp.z - perpZ * this.trackHalfWidth)
-      this.scene.add(inner)
-
-      const outer = new THREE.Mesh(wallGeo, wallMat)
-      outer.position.set(wp.x + perpX * this.trackHalfWidth, 0.55, wp.z + perpZ * this.trackHalfWidth)
-      this.scene.add(outer)
-    }
-  }
-
-  /** Nearest waypoint to (x,z) and the distance to it -- used both for
-   * keeping cars within the track's walls and for tracking how far a
-   * player has travelled around the loop. */
-  findClosestWaypoint(x, z) {
-    let bestIndex = 0
-    let bestDistSq = Infinity
-    for (let i = 0; i < this.waypoints.length; i++) {
-      const wp = this.waypoints[i]
-      const dx = x - wp.x
-      const dz = z - wp.z
-      const d = dx * dx + dz * dz
-      if (d < bestDistSq) { bestDistSq = d; bestIndex = i }
-    }
-    return { index: bestIndex, distance: Math.sqrt(bestDistSq) }
   }
 
   _buildLights() {
@@ -256,8 +159,8 @@ export class GameScene {
   // Item box positions are map data, same spirit as the obstacles above --
   // a future second map simply defines a different (or empty) list here.
   _buildItemBoxes() {
-    const geo = new THREE.OctahedronGeometry(0.55, 0)
-    const mat = new THREE.MeshLambertMaterial({ color: 0xf7d774, flatShading: true, emissive: 0xf7d774, emissiveIntensity: 0.45 })
+    const fallbackGeo = new THREE.OctahedronGeometry(0.55, 0)
+    const fallbackMat = new THREE.MeshLambertMaterial({ color: 0xf7d774, flatShading: true, emissive: 0xf7d774, emissiveIntensity: 0.45 })
 
     this.itemBoxes = [] // { x, z, mesh }
     const count = 6
@@ -267,7 +170,8 @@ export class GameScene {
       const x = Math.cos(a) * r
       const z = Math.sin(a) * r
 
-      const mesh = new THREE.Mesh(geo, mat.clone())
+      // the "?" box model if it loaded, otherwise the original gem shape
+      const mesh = cloneAbilityModel('itembox') || new THREE.Mesh(fallbackGeo, fallbackMat.clone())
       mesh.position.set(x, 1.15, z)
       this.scene.add(mesh)
       this.itemBoxes.push({ x, z, mesh })
@@ -295,10 +199,20 @@ export class GameScene {
   }
 
   updateCamera(car, dt) {
-    const behindX = Math.sin(car.heading) * -this.followDistance
-    const behindZ = Math.cos(car.heading) * -this.followDistance
-    const desiredX = car.position.x + behindX
-    const desiredZ = car.position.z + behindZ
+    const anim = car.animator
+
+    // While sliding, the camera swings part-way toward the direction the car is
+    // actually travelling instead of where it points, so a drift shows the
+    // car's flank. (Only when moving forward; reversing would flip it.)
+    let camHeading = car.heading
+    if (!this.reducedMotion && car.speed > 3 && anim.driftBlend > 0.01) {
+      const velHeading = Math.atan2(car.velocity.x, car.velocity.z)
+      const diff = ((velHeading - car.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI
+      camHeading += diff * 0.3 * anim.driftBlend
+    }
+
+    const desiredX = car.position.x - Math.sin(camHeading) * this.followDistance
+    const desiredZ = car.position.z - Math.cos(camHeading) * this.followDistance
     const desiredY = this.followHeight
 
     const t = 1 - Math.exp(-this.camDecay * dt)
@@ -308,6 +222,18 @@ export class GameScene {
 
     this._camLook.set(car.position.x, 0.6, car.position.z)
     this.camera.lookAt(this._camLook)
+
+    if (this.reducedMotion) return
+
+    // FOV widens with speed (and a bit more under boost) for a sense of pace
+    const boostKick = car.isBoosted() ? 5 : 0
+    const fovTarget = BASE_FOV + car.speedFraction * 5 + boostKick
+    const fovT = 1 - Math.exp(-4 * dt)
+    if (Math.abs(fovTarget - this.camera.fov) > 0.01) {
+      this.camera.fov += (fovTarget - this.camera.fov) * fovT
+      this.camera.updateProjectionMatrix()
+    }
+    this.camera.rotateZ(anim.roll * 0.25) // bank gently into the turn
   }
 
   render() {

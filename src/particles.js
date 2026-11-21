@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.min.js'
 
-const MAX_PARTICLES = 70
+const MAX_PARTICLES = 200 // every car can now smoke + spark, not just yours
 const sharedGeo = new THREE.CircleGeometry(0.4, 8)
 
 export class ParticleSystem {
@@ -37,6 +37,21 @@ export class ParticleSystem {
     p.mesh.material.color.setHex(0xffffff)
   }
 
+  /** A short-lived bright fleck thrown out from a rear tyre while drifting. */
+  spawnSpark(x, y, z, vx, vy, vz, colorHex) {
+    const p = this._next()
+    p.kind = 'spark'
+    p.mesh.visible = true
+    p.mesh.position.set(x, y, z)
+    p.mesh.scale.setScalar(0.12 + Math.random() * 0.08)
+    p.life = 0
+    p.maxLife = 0.22 + Math.random() * 0.2
+    p.vel.set(vx, vy, vz)
+    p.baseOpacity = 1
+    p.mesh.material.opacity = 1
+    p.mesh.material.color.setHex(colorHex)
+  }
+
   spawnTagBurst(x, z, colorHex) {
     for (let i = 0; i < 12; i++) {
       const p = this._next()
@@ -64,6 +79,7 @@ export class ParticleSystem {
       }
       p.mesh.position.addScaledVector(p.vel, dt)
       if (p.kind === 'burst') p.vel.y -= 5 * dt
+      else if (p.kind === 'spark') p.vel.y -= 9 * dt
 
       const tRemain = 1 - p.life / p.maxLife
       p.mesh.material.opacity = tRemain * p.baseOpacity

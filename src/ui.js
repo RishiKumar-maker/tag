@@ -8,12 +8,21 @@ const screens = {
 }
 
 let currentScreen = 'menu'
+const screenListeners = []
+document.body.dataset.screen = currentScreen // CSS hooks (touch layer, sound button) key off this
 
 export function showScreen(name) {
   currentScreen = name
+  document.body.dataset.screen = name
   for (const key in screens) {
     screens[key].classList.toggle('active', key === name)
   }
+  screenListeners.forEach((fn) => fn(name))
+}
+
+/** Run `fn(screenName)` after every screen change. */
+export function onScreenChange(fn) {
+  screenListeners.push(fn)
 }
 
 export function getCurrentScreen() {
@@ -80,7 +89,6 @@ export function renderPlayerList(players, localId, hostId) {
 const MODE_DESCRIPTIONS = {
   classic: "One chaser. Get tagged, you're it.",
   infection: 'Tagged players join the chase. Last one standing wins.',
-  race: 'Endless traffic weaving. One crash ends your run — go the distance.',
 }
 
 export function setModeUI(mode, isHost) {
@@ -115,6 +123,7 @@ export function setInventory(name) {
   slot.classList.toggle('has-item', !!name)
 }
 
+/** Practice has no timer and no minimap, since there's no round and no one else. */
 export function setPracticeHud(isPractice) {
   el('hud-timer').classList.toggle('hidden', isPractice)
   el('minimap').parentElement.classList.toggle('hidden', isPractice)

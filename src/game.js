@@ -1,11 +1,13 @@
 import { Car, PHYSICS } from './car.js'
 import { GameScene, ARENA_RADIUS } from './scene.js'
 import { ParticleSystem } from './particles.js'
+import { DriftFx } from './driftFx.js'
 import { Minimap } from './minimap.js'
 import { Network } from './network.js'
 import { buildCar } from './carLibrary.js'
+import { loadAbilityModels } from './abilityModels.js'
 import { AbilityManager, randomAbilityId, abilityName, SHOCKWAVE_RADIUS } from './abilities.js'
-import { buildTrafficCars, updateTrafficCars, checkTrafficCollision, clearTrafficCars } from './traffic.js'
+import * as audio from './audio.js'
 import * as ui from './ui.js'
 import {
   PLAYER_COLORS, hexToCss, TAG_RADIUS, CHASER_IMMUNITY_MS, CHASER_SPEED_MULTIPLIER,
@@ -15,13 +17,17 @@ import {
 } from './constants.js'
 
 const STATE_SEND_INTERVAL_MS = 1000 / STATE_SEND_HZ
-const MAP_BY_MODE = { classic: 'arena', infection: 'arena', practice: 'arena', race: 'traffic' }
+// mode -> map id (see MAP_BUILDERS in scene.js). A new map is one new entry here.
+const MAP_BY_MODE = { classic: 'arena', infection: 'arena', practice: 'arena' }
+const LOBBY_MODES = ['classic', 'infection']
+const BUMP_COOLDOWN_MS = 220
 
 export class Game {
   constructor() {
     this.network = new Network()
     this.scene = null
     this.particles = null
+    this.driftFx = null
     this.minimap = null
 
     this.localName = ''
@@ -50,12 +56,9 @@ export class Game {
     this.inventory = null // held ability id, or null
     this.itemBoxState = new Map() // boxIndex -> timestamp when it respawns (absent/past = active)
 
-    this.trafficCars = []
-    this.raceStartTime = 0
-    this.crashedPlayers = new Set()
-    this.distanceByPlayer = new Map()
-    this.lapsByPlayer = new Map()
-    this._lastWaypointIndex = new Map()
+    this._wasShielded = false
+    this._lastTickSecond = -1
+    this._lastBump = 0
 
     this._bindNetwork()
   }
@@ -80,30 +83,24 @@ export class Game {
 
       if (this.roundActive) {
         this.roundPlayers = this.roundPlayers.filter((p) => p.id !== peerId)
-        this.crashedPlayers.delete(peerId)
+        this.chaserSet.delete(peerId)
 
-        if (this.mode === 'race') {
-          if (this.network.isHost) this._maybeEndRace()
-        } else {
-          this.chaserSet.delete(peerId)
-
-          if (this.chaserSet.size === 0 && this.roundPlayers.length > 0) {
-            // deterministic so every peer promotes the same replacement without any extra messages
-            const next = [...this.roundPlayers].sort((a, b) => a.id.localeCompare(b.id))[0]
-            this.chaserSet.add(next.id)
-            this.immunityUntil.set(next.id, Date.now() + CHASER_IMMUNITY_MS)
-            if (this.mode === 'classic') {
-              const last = this.chaserIntervals[this.chaserIntervals.length - 1]
-              if (last && last.end === null) last.end = Date.now()
-              this.chaserIntervals.push({ id: next.id, start: Date.now(), end: null })
-            }
-            this._updateChaserVisuals()
-            this._updateStatusBanner()
+        if (this.chaserSet.size === 0 && this.roundPlayers.length > 0) {
+          // deterministic so every peer promotes the same replacement without any extra messages
+          const next = [...this.roundPlayers].sort((a, b) => a.id.localeCompare(b.id))[0]
+          this.chaserSet.add(next.id)
+          this.immunityUntil.set(next.id, Date.now() + CHASER_IMMUNITY_MS)
+          if (this.mode === 'classic') {
+            const last = this.chaserIntervals[this.chaserIntervals.length - 1]
+            if (last && last.end === null) last.end = Date.now()
+            this.chaserIntervals.push({ id: next.id, start: Date.now(), end: null })
           }
+          this._updateChaserVisuals()
+          this._updateStatusBanner()
+        }
 
-          if (this.roundPlayers.length < 2 && this.network.isHost) {
-            this._hostEndRound(Date.now())
-          }
+        if (this.roundPlayers.length < 2 && this.network.isHost) {
+          this._hostEndRound(Date.now())
         }
       }
       this._refreshLobbyUI()
@@ -115,12 +112,15 @@ export class Game {
     }
 
     net.onModeSelect = ({ mode }) => {
+      if (!LOBBY_MODES.includes(mode)) return // e.g. the retired Traffic Dash from an older copy of the game
       this.mode = mode
       if (ui.getCurrentScreen() === 'results') ui.showScreen('lobby')
       this._refreshLobbyUI()
     }
 
-    net.onRoundStart = (payload) => { this._beginRound(payload) }
+    net.onRoundStart = (payload) => {
+      if (LOBBY_MODES.includes(payload?.mode)) this._beginRound(payload)
+    }
 
     net.onCarState = (state, peerId) => {
       const car = this.cars.get(peerId)
@@ -139,22 +139,16 @@ export class Game {
     net.onAbilityUse = (payload) => {
       if (payload.abilityId === 'shockwave') this._resolveShockwave(payload)
       this.abilityManager?.handleUse(payload, this.cars)
+      audio.playAt(`ability_use_${payload.abilityId}`, payload.x, payload.z)
     }
 
     net.onAbilityHit = ({ targetId, effectType, useId, timestamp }) => {
       const car = this.cars.get(targetId)
-      if (car && car.applyEffect(effectType, timestamp) && this.particles) {
-        this.particles.spawnTagBurst(car.position.x, car.position.z, 0xff8c69)
+      if (car && car.applyEffect(effectType, timestamp)) {
+        this.particles?.spawnTagBurst(car.position.x, car.position.z, 0xff8c69)
+        audio.playAt(effectType === 'slip' ? 'hit_slip' : 'hit_stun', car.position.x, car.position.z)
       }
       if (useId) this.abilityManager?.removeProjectile(useId)
-    }
-
-    net.onPlayerCrash = ({ distance }, peerId) => {
-      this.crashedPlayers.add(peerId)
-      this.distanceByPlayer.set(peerId, distance)
-      const car = this.cars.get(peerId)
-      if (car && this.particles) this.particles.spawnTagBurst(car.position.x, car.position.z, 0xffffff)
-      if (this.mode === 'race' && this.network.isHost) this._maybeEndRace()
     }
   }
 
@@ -219,12 +213,14 @@ export class Game {
     this.chaserSet = new Set()
 
     ui.showScreen('game')
+    await loadAbilityModels() // before the scene exists, so item boxes can use their model
     this._setupSceneIfNeeded('arena')
     await this._spawnRoundCars()
     ui.setHudMode('Practice')
     ui.setPracticeHud(true)
     ui.setStatusBanner('Free Drive', '')
     this._resetItemsAndAbilities()
+    audio.play('round_start')
   }
 
   // ---------------- lobby ----------------
@@ -247,26 +243,17 @@ export class Game {
   async startRound() {
     if (!this.network.isHost) return
     const players = [...this.roster.values()]
-    if (players.length < 1) {
-      ui.toast('Need at least 1 player to start.')
-      return
-    }
-    if (this.mode !== 'race' && players.length < 2) {
+    if (players.length < 2) {
       ui.toast('Need at least 2 players to start.')
       return
     }
-    let payload
-    if (this.mode === 'race') {
-      payload = { mode: this.mode, players, startTime: Date.now() }
-    } else {
-      const chaser = players[Math.floor(Math.random() * players.length)]
-      payload = {
-        mode: this.mode,
-        players,
-        chaserId: chaser.id,
-        startTime: Date.now(),
-        durationMs: this.mode === 'infection' ? INFECTION_DURATION_MS : CLASSIC_DURATION_MS,
-      }
+    const chaser = players[Math.floor(Math.random() * players.length)]
+    const payload = {
+      mode: this.mode,
+      players,
+      chaserId: chaser.id,
+      startTime: Date.now(),
+      durationMs: this.mode === 'infection' ? INFECTION_DURATION_MS : CLASSIC_DURATION_MS,
     }
     this.network.sendRoundStart(payload)
     await this._beginRound(payload)
@@ -279,40 +266,28 @@ export class Game {
     this.roundPlayers = payload.players
     this.roundActive = true
     this.roundEnded = false
-
-    if (this.mode === 'race') {
-      this.raceStartTime = payload.startTime
-      this.crashedPlayers = new Set()
-      this.distanceByPlayer = new Map(this.roundPlayers.map((p) => [p.id, 0]))
-      this.lapsByPlayer = new Map()
-      this._lastWaypointIndex = new Map()
-      this.chaserSet = new Set()
-    } else {
-      this.roundDurationMs = payload.durationMs
-      this.roundStartTime = payload.startTime
-      this.chaserSet = new Set([payload.chaserId])
-      this.catchOrder = []
-      this.chaserIntervals = [{ id: payload.chaserId, start: payload.startTime, end: null }]
-      this.immunityUntil = new Map([[payload.chaserId, payload.startTime + CHASER_IMMUNITY_MS]])
-    }
+    this.roundDurationMs = payload.durationMs
+    this.roundStartTime = payload.startTime
+    this.chaserSet = new Set([payload.chaserId])
+    this.catchOrder = []
+    this.chaserIntervals = [{ id: payload.chaserId, start: payload.startTime, end: null }]
+    this.immunityUntil = new Map([[payload.chaserId, payload.startTime + CHASER_IMMUNITY_MS]])
 
     ui.showScreen('game')
+    await loadAbilityModels()
     this._setupSceneIfNeeded(MAP_BY_MODE[this.mode] || 'arena')
     await this._spawnRoundCars()
 
-    if (this.mode === 'race') {
-      this.trafficCars = buildTrafficCars(this.scene, this.scene.waypoints, this.scene.loopLength)
-      ui.setHudMode('Traffic Dash')
-      ui.setPracticeHud(true) // reuse: hides the timer pill + minimap, neither apply to this mode
-      ui.setStatusBanner('Go!', 'runner')
-    } else {
-      ui.setHudMode(this.mode === 'infection' ? 'Infection' : 'Classic')
-      this._updateStatusBanner()
-    }
+    ui.setHudMode(this.mode === 'infection' ? 'Infection' : 'Classic')
+    this._updateStatusBanner()
     this._resetItemsAndAbilities()
+    audio.play('round_start')
   }
 
   _resetItemsAndAbilities() {
+    this._wasShielded = false
+    this._lastTickSecond = -1
+    this.driftFx?.clear()
     this.inventory = null
     ui.setInventory(null)
     this.itemBoxState.clear()
@@ -323,15 +298,15 @@ export class Game {
   _setupSceneIfNeeded(mapId) {
     if (this.scene && this.scene.mapId === mapId) return
     if (this.scene) {
-      clearTrafficCars(this.scene, this.trafficCars)
-      this.trafficCars = []
       for (const car of this.cars.values()) this.scene.removeCar(car.mesh)
+      this.driftFx?.dispose()
       this.scene.dispose()
       this.scene = null
     }
     try {
       this.scene = new GameScene(ui.getGameCanvas(), mapId)
       this.particles = new ParticleSystem(this.scene.scene)
+      this.driftFx = new DriftFx(this.scene.scene, this.particles)
       this.minimap = new Minimap(ui.getMinimapCanvas(), ARENA_RADIUS)
       this.abilityManager = new AbilityManager(this.scene)
     } catch (e) {
@@ -352,21 +327,13 @@ export class Game {
     )
 
     this.roundPlayers.forEach((p, i) => {
-      const { vehicle, wheels } = built[i]
-      const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId, vehicle, wheels, name: p.name })
+      const { vehicle, wheels, dims } = built[i]
+      const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId, vehicle, wheels, dims, name: p.name })
 
-      if (this.mode === 'race') {
-        const start = this.scene.waypoints[0]
-        const spacing = Math.min(3, (this.scene.trackHalfWidth * 1.7) / Math.max(n, 1))
-        const zOffset = (i - (n - 1) / 2) * spacing
-        car.position.set(start.x - (i % 3) * 2.2, 0, start.z + zOffset)
-        car.heading = Math.PI / 2 // facing +X, matching the track's starting direction
-      } else {
-        const angle = (i / n) * Math.PI * 2
-        const radius = 6
-        car.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
-        car.heading = angle + Math.PI
-      }
+      const angle = (i / n) * Math.PI * 2
+      const radius = 6
+      car.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
+      car.heading = angle + Math.PI
       car.mesh.position.copy(car.position)
       car.mesh.rotation.y = car.heading
       this.scene.addCar(car.mesh)
@@ -398,22 +365,13 @@ export class Game {
     this._elapsed += dt
 
     const localCar = this.cars.get(this.localId)
-    const localCrashed = this.crashedPlayers.has(this.localId)
 
-    if (localCar && !localCrashed) {
+    if (localCar) {
       localCar.applyInput(input)
       localCar.step(dt)
       this._resolveCollisions(localCar)
 
-      if (localCar.isDrifting && Math.random() < 0.6) {
-        this.particles.spawnDriftSmoke(
-          localCar.position.x - Math.sin(localCar.heading) * 1.1,
-          localCar.position.z - Math.cos(localCar.heading) * 1.1,
-          localCar.velocity.x,
-          localCar.velocity.z
-        )
-      }
-      if (Date.now() < localCar.statusEffects.boostUntil && Math.random() < 0.7) {
+      if (localCar.isBoosted() && Math.random() < 0.7) {
         this.particles.spawnDriftSmoke(
           localCar.position.x - Math.sin(localCar.heading) * 1.3,
           localCar.position.z - Math.cos(localCar.heading) * 1.3,
@@ -422,83 +380,40 @@ export class Game {
         )
       }
       this._updateSpeedometer(localCar)
-
-      if (this.mode === 'race') this._checkTrafficCollision(localCar)
-      else this._checkItemPickup(localCar)
+      this._checkItemPickup(localCar)
+      this._updateLocalAudio(localCar)
     }
 
     for (const [id, car] of this.cars) {
-      if (id !== this.localId && !this.crashedPlayers.has(id)) car.stepRemote(dt)
+      if (id !== this.localId) car.stepRemote(dt)
     }
 
+    // tyre marks, smoke and sparks for every car, so other players' drifts look right too
+    for (const car of this.cars.values()) this.driftFx.updateCar(car, dt)
+    this.driftFx.update()
     this.particles.update(dt)
 
-    if (this.mode === 'race') {
-      const raceElapsed = (Date.now() - this.raceStartTime) / 1000
-      updateTrafficCars(this.trafficCars, raceElapsed, this.scene.waypoints, this.scene.loopLength)
-      this._updateRaceProgress()
-    } else {
-      this.scene.animateItemBoxes(dt, this._elapsed)
-      this.abilityManager?.update(dt, this.cars)
-      this._checkAbilityHits(localCar)
-    }
+    this.scene.animateItemBoxes(dt, this._elapsed)
+    this.abilityManager?.update(dt, this.cars)
+    this._checkAbilityHits(localCar)
 
     if (localCar) this.scene.updateCamera(localCar, dt)
     this.scene.render()
 
     this._maybeSendState()
 
-    if (this.mode !== 'race') {
-      this._checkTagging()
-      this._updateTimerUI()
-      this._updateMinimap()
-    }
+    this._checkTagging()
+    this._updateTimerUI()
+    this._updateMinimap()
   }
 
-  _checkTrafficCollision(localCar) {
-    if (checkTrafficCollision(localCar, this.trafficCars, PHYSICS.carRadius)) {
-      this._crashLocalPlayer()
-    }
-  }
-
-  _crashLocalPlayer() {
-    if (this.crashedPlayers.has(this.localId)) return
-    const distance = this.distanceByPlayer.get(this.localId) || 0
-    this.crashedPlayers.add(this.localId)
-    this.network.sendPlayerCrash({ distance, timestamp: Date.now() })
-    const car = this.cars.get(this.localId)
-    if (car && this.particles) this.particles.spawnTagBurst(car.position.x, car.position.z, 0xff6b5c)
-    ui.setStatusBanner(`Crashed — ${Math.round(distance)}m`, 'chaser')
-    if (this.network.isHost) this._maybeEndRace()
-  }
-
-  _updateRaceProgress() {
-    const n = this.scene.waypoints.length
-    for (const p of this.roundPlayers) {
-      if (this.crashedPlayers.has(p.id)) continue
-      const car = this.cars.get(p.id)
-      if (!car) continue
-      const { index } = this.scene.findClosestWaypoint(car.position.x, car.position.z)
-      const prevIndex = this._lastWaypointIndex.get(p.id) ?? index
-      let loops = this.lapsByPlayer.get(p.id) || 0
-      if (prevIndex > n * 0.75 && index < n * 0.25) {
-        loops++
-        this.lapsByPlayer.set(p.id, loops)
-      }
-      this._lastWaypointIndex.set(p.id, index)
-      this.distanceByPlayer.set(p.id, loops * this.scene.loopLength + (index / n) * this.scene.loopLength)
-    }
-
-    if (!this.crashedPlayers.has(this.localId)) {
-      const d = this.distanceByPlayer.get(this.localId) || 0
-      ui.setStatusBanner(`${Math.round(d)}m`, 'runner')
-    }
-  }
-
-  _maybeEndRace() {
-    if (this.roundEnded || this.roundPlayers.length === 0) return
-    const allCrashed = this.roundPlayers.every((p) => this.crashedPlayers.has(p.id))
-    if (allCrashed) this._hostEndRound(Date.now())
+  _updateLocalAudio(car) {
+    audio.setListener(car.position.x, car.position.z, car.heading)
+    audio.updateDriving({ speedFraction: car.speedFraction, skid: car.animator.skid, boosted: car.isBoosted() })
+    if (car.animator.consumeLevelUp()) audio.play('drift_charge')
+    const shielded = car.isShielded()
+    if (this._wasShielded && !shielded) audio.play('shield_end')
+    this._wasShielded = shielded
   }
 
   _checkItemPickup(localCar) {
@@ -510,6 +425,7 @@ export class Game {
       const dist = Math.hypot(localCar.position.x - box.x, localCar.position.z - box.z)
       if (dist > ITEM_BOX_RADIUS + PHYSICS.carRadius) return
       this.inventory = randomAbilityId()
+      audio.play('item_pickup')
       ui.setInventory(abilityName(this.inventory))
       this.itemBoxState.set(i, now + ITEM_BOX_RESPAWN_MS)
       this.scene.setItemBoxVisible(i, false)
@@ -524,6 +440,7 @@ export class Game {
       if (hit.useId) this.abilityManager.removeProjectile(hit.useId)
       const applied = localCar.applyEffect(hit.effectType)
       if (applied && this.particles) this.particles.spawnTagBurst(localCar.position.x, localCar.position.z, 0xff8c69)
+      audio.play(!applied ? 'shield_block' : hit.effectType === 'slip' ? 'hit_slip' : 'hit_stun')
       if (hit.useId) {
         this.network.sendAbilityHit({ targetId: this.localId, effectType: hit.effectType, useId: hit.useId, casterId: hit.casterId, timestamp: Date.now() })
       }
@@ -549,6 +466,7 @@ export class Game {
     }
 
     this.network.sendAbilityUse(payload)
+    audio.play(`ability_use_${abilityId}`)
     if (abilityId === 'shockwave') this._resolveShockwave(payload)
     this.abilityManager?.handleUse(payload, this.cars)
 
@@ -563,6 +481,7 @@ export class Game {
     if (dist > SHOCKWAVE_RADIUS) return
     const applied = localCar.applyEffect('stun', timestamp)
     if (applied && this.particles) this.particles.spawnTagBurst(localCar.position.x, localCar.position.z, 0xff8c69)
+    audio.play(applied ? 'hit_stun' : 'shield_block')
     this.network.sendAbilityHit({ targetId: this.localId, effectType: 'stun', casterId, useId, timestamp: Date.now() })
   }
 
@@ -573,22 +492,19 @@ export class Game {
   }
 
   _resolveCollisions(car) {
-    if (this.mode === 'race') {
-      this._resolveTrackBoundary(car)
-    } else {
-      const distFromCenter = Math.hypot(car.position.x, car.position.z)
-      const maxDist = ARENA_RADIUS - PHYSICS.carRadius
-      if (distFromCenter > maxDist) {
-        const scale = maxDist / distFromCenter
-        car.position.x *= scale
-        car.position.z *= scale
-        const nx = car.position.x / maxDist
-        const nz = car.position.z / maxDist
-        const vDotN = car.velocity.x * nx + car.velocity.z * nz
-        if (vDotN > 0) {
-          car.velocity.x -= vDotN * nx
-          car.velocity.z -= vDotN * nz
-        }
+    const distFromCenter = Math.hypot(car.position.x, car.position.z)
+    const maxDist = ARENA_RADIUS - PHYSICS.carRadius
+    if (distFromCenter > maxDist) {
+      const scale = maxDist / distFromCenter
+      car.position.x *= scale
+      car.position.z *= scale
+      const nx = car.position.x / maxDist
+      const nz = car.position.z / maxDist
+      const vDotN = car.velocity.x * nx + car.velocity.z * nz
+      if (vDotN > 0) {
+        car.velocity.x -= vDotN * nx
+        car.velocity.z -= vDotN * nz
+        this._bump('bump_wall', vDotN)
       }
     }
 
@@ -607,11 +523,12 @@ export class Game {
         if (vDotN < 0) {
           car.velocity.x -= vDotN * nx
           car.velocity.z -= vDotN * nz
+          this._bump('bump_wall', -vDotN)
         }
       }
     }
 
-    for (const [id, other] of this.cars) {
+    for (const [, other] of this.cars) {
       if (other === car) continue
       const dx = car.position.x - other.position.x
       const dz = car.position.z - other.position.z
@@ -621,26 +538,18 @@ export class Game {
         const push = (minDist - dist) * 0.5
         car.position.x += (dx / dist) * push
         car.position.z += (dz / dist) * push
+        const closing = -((car.velocity.x - other.velocity.x) * (dx / dist) + (car.velocity.z - other.velocity.z) * (dz / dist))
+        this._bump('bump_car', closing)
       }
     }
   }
 
-  _resolveTrackBoundary(car) {
-    const { index, distance } = this.scene.findClosestWaypoint(car.position.x, car.position.z)
-    const maxDist = this.scene.trackHalfWidth - 0.3
-    if (distance > maxDist && distance > 0.0001) {
-      const wp = this.scene.waypoints[index]
-      const nx = (car.position.x - wp.x) / distance
-      const nz = (car.position.z - wp.z) / distance
-      const push = distance - maxDist
-      car.position.x -= nx * push
-      car.position.z -= nz * push
-      const vDotN = car.velocity.x * nx + car.velocity.z * nz
-      if (vDotN > 0) {
-        car.velocity.x -= vDotN * nx
-        car.velocity.z -= vDotN * nz
-      }
-    }
+  /** Impact sound, louder with harder hits; a cooldown stops a car grinding along a wall from machine-gunning it. */
+  _bump(soundId, impactSpeed) {
+    const now = performance.now()
+    if (impactSpeed < 3 || now - this._lastBump < BUMP_COOLDOWN_MS) return
+    this._lastBump = now
+    audio.play(soundId, { volume: Math.min(1, impactSpeed / 14) })
   }
 
   _checkTagging() {
@@ -670,6 +579,8 @@ export class Game {
     if (targetCar && this.particles) {
       this.particles.spawnTagBurst(targetCar.position.x, targetCar.position.z, 0xffffff)
     }
+    if (targetCar) audio.playAt('tag_hit', targetCar.position.x, targetCar.position.z)
+    if (targetId === this.localId) audio.play('tag_you_are_it')
 
     if (this.mode === 'infection') {
       this.chaserSet.add(targetId)
@@ -708,6 +619,11 @@ export class Game {
     if (!this.roundActive || this.roundEnded || this.isPractice) return
     const remaining = this.roundDurationMs - (Date.now() - this.roundStartTime)
     ui.setHudTimer(Math.max(0, remaining))
+    const secsLeft = Math.ceil(remaining / 1000)
+    if (secsLeft <= 10 && secsLeft > 0 && secsLeft !== this._lastTickSecond) {
+      this._lastTickSecond = secsLeft
+      audio.play('timer_tick')
+    }
     if (remaining <= 0 && this.network.isHost) this._hostEndRound(Date.now())
   }
 
@@ -739,27 +655,16 @@ export class Game {
     if (!this.roundActive) return
     this.roundActive = false
     this.roundEnded = true
+    audio.stopDriving()
+    audio.play('round_end')
 
-    let results, title
-    if (this.mode === 'race') {
-      results = this._computeRaceResults()
-      title = 'Traffic Dash Results'
-    } else {
-      const last = this.chaserIntervals[this.chaserIntervals.length - 1]
-      if (last && last.end === null) last.end = endTime
-      results = this.mode === 'infection' ? this._computeInfectionResults() : this._computeClassicResults(endTime)
-      title = this.mode === 'infection' ? 'Infection Results' : 'Round Results'
-    }
+    const last = this.chaserIntervals[this.chaserIntervals.length - 1]
+    if (last && last.end === null) last.end = endTime
+    const results = this.mode === 'infection' ? this._computeInfectionResults() : this._computeClassicResults(endTime)
+    const title = this.mode === 'infection' ? 'Infection Results' : 'Round Results'
 
     ui.setResults({ title, rows: results, isHost: this.network.isHost })
     ui.showScreen('results')
-  }
-
-  _computeRaceResults() {
-    return [...this.roundPlayers]
-      .map((p) => ({ ...p, distance: this.distanceByPlayer.get(p.id) || 0 }))
-      .sort((a, b) => b.distance - a.distance)
-      .map((p) => ({ name: p.name, color: p.color, detail: `${Math.round(p.distance)}m` }))
   }
 
   _computeClassicResults(endTime) {
@@ -806,15 +711,11 @@ export class Game {
     this.roster.clear()
     if (this.scene) {
       for (const car of this.cars.values()) this.scene.removeCar(car.mesh)
-      clearTrafficCars(this.scene, this.trafficCars)
     }
-    this.trafficCars = []
-    this.crashedPlayers.clear()
-    this.distanceByPlayer.clear()
-    this.lapsByPlayer.clear()
-    this._lastWaypointIndex.clear()
+    this.driftFx?.clear()
     this.cars.clear()
     this.abilityManager?.clear()
+    audio.stopDriving()
     this.inventory = null
     ui.setInventory(null)
     ui.setPracticeHud(false)
