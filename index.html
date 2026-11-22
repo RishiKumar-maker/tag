@@ -46,8 +46,12 @@
     </div>
 
     <div class="menu-divider"><span>or</span></div>
+    <div class="segmented practice-map" id="practice-map-segmented" role="group" aria-label="Practice map">
+      <button class="segment active" data-map="arena" type="button">Meadow Arena</button>
+      <button class="segment" data-map="harbor" type="button">Harbor Yard</button>
+    </div>
     <button id="btn-practice" class="btn btn-ghost btn-wide" type="button">Practice Solo</button>
-    <p class="hint">Try the drift controls and arena on your own — no other players needed.</p>
+    <p class="hint">Try the drift controls and maps on your own — no other players needed.</p>
 
     <button id="btn-how-to-play" class="btn btn-ghost btn-small" type="button">How to Play</button>
     <button id="btn-edit-controls" class="btn btn-ghost btn-small touch-only" type="button">Edit controls</button>
@@ -72,6 +76,15 @@
         <button class="segment" data-mode="infection" type="button">Infection</button>
       </div>
       <p class="mode-desc" id="mode-desc">One chaser. Get tagged, you're it.</p>
+    </div>
+
+    <div class="mode-select">
+      <span class="field-label">Map</span>
+      <div class="segmented" id="map-segmented">
+        <button class="segment active" data-map="arena" type="button">Meadow Arena</button>
+        <button class="segment" data-map="harbor" type="button">Harbor Yard</button>
+      </div>
+      <p class="mode-desc" id="map-desc"></p>
     </div>
 
     <button id="btn-start" class="btn btn-primary">Start Round</button>
