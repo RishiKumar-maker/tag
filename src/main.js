@@ -160,8 +160,15 @@ document.getElementById('btn-create').addEventListener('click', () => {
 document.getElementById('btn-join').addEventListener('click', () => {
   game.joinRoom(ui.getNameInput(), ui.getCodeInput(), getSelectedCarType())
 })
+let practiceMap = 'arena'
+document.querySelectorAll('#practice-map-segmented .segment').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    practiceMap = btn.dataset.map
+    ui.setPracticeMapUI(practiceMap)
+  })
+})
 document.getElementById('btn-practice').addEventListener('click', () => {
-  game.startPractice(ui.getNameInput(), getSelectedCarType())
+  game.startPractice(ui.getNameInput(), getSelectedCarType(), practiceMap)
 })
 nameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btn-create').click()
@@ -189,6 +196,9 @@ document.getElementById('btn-copy-link').addEventListener('click', async () => {
 })
 document.querySelectorAll('#mode-segmented .segment').forEach((btn) => {
   btn.addEventListener('click', () => game.setMode(btn.dataset.mode))
+})
+document.querySelectorAll('#map-segmented .segment').forEach((btn) => {
+  btn.addEventListener('click', () => game.setMap(btn.dataset.map))
 })
 document.getElementById('btn-start').addEventListener('click', () => game.startRound())
 document.getElementById('btn-leave-lobby').addEventListener('click', () => game.leaveToMenu())

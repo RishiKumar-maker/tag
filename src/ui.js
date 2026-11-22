@@ -1,3 +1,4 @@
+import { MAPS } from './maps.js'
 const el = (id) => document.getElementById(id)
 
 const screens = {
@@ -98,6 +99,18 @@ export function setModeUI(mode, isHost) {
   })
   seg.classList.toggle('readonly', !isHost)
   el('mode-desc').textContent = MODE_DESCRIPTIONS[mode] || ''
+}
+
+export function setMapUI(mapId, isHost) {
+  const seg = el('map-segmented')
+  seg.querySelectorAll('.segment').forEach((btn) => btn.classList.toggle('active', btn.dataset.map === mapId))
+  seg.classList.toggle('readonly', !isHost)
+  el('map-desc').textContent = MAPS[mapId]?.blurb || ''
+}
+
+/** The menu's practice-map picker (local only; nothing to sync). */
+export function setPracticeMapUI(mapId) {
+  el('practice-map-segmented').querySelectorAll('.segment').forEach((btn) => btn.classList.toggle('active', btn.dataset.map === mapId))
 }
 
 export function setStartControls(canStart, isHost) {

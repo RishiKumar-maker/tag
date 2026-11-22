@@ -58,6 +58,7 @@ export class Network {
     this.onPeerLeave = null
     this.onPlayerInfo = null
     this.onModeSelect = null
+    this.onMapSelect = null
     this.onRoundStart = null
     this.onCarState = null
     this.onTagEvent = null
@@ -86,6 +87,7 @@ export class Network {
     this._actions = {
       playerInfo: make('player-info'),
       modeSelect: make('mode-select'),
+      mapSelect: make('map-select'),
       roundStart: make('round-start'),
       carState: make('car-state'),
       tagEvent: make('tag-event'),
@@ -97,6 +99,7 @@ export class Network {
 
     this._actions.playerInfo.onMessage = (data, ctx) => this.onPlayerInfo?.(data, ctx.peerId)
     this._actions.modeSelect.onMessage = (data) => this.onModeSelect?.(data)
+    this._actions.mapSelect.onMessage = (data, ctx) => this.onMapSelect?.(data, ctx.peerId)
     this._actions.roundStart.onMessage = (data) => this.onRoundStart?.(data)
     this._actions.carState.onMessage = (data, ctx) => this.onCarState?.(data, ctx.peerId)
     this._actions.tagEvent.onMessage = (data) => this.onTagEvent?.(data)
@@ -145,6 +148,9 @@ export class Network {
   }
   sendModeSelect(mode) {
     this._actions.modeSelect?.send({ mode })
+  }
+  sendMapSelect(mapId) {
+    this._actions.mapSelect?.send({ mapId })
   }
   sendRoundStart(payload) {
     this._actions.roundStart?.send(payload)

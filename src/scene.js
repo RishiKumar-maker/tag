@@ -1,5 +1,7 @@
 import * as THREE from '../lib/three.module.min.js'
 import { cloneAbilityModel } from './abilityModels.js'
+import { DEFAULT_MAP } from './maps.js'
+import { buildHarborMap } from './harborMap.js'
 
 export const ARENA_RADIUS = 44
 
@@ -12,28 +14,50 @@ function seededRandom(seed) {
   return x - Math.floor(x)
 }
 
-/** Each map is a method that fills `this.scene`, `this.colliders` and
- * `this.itemBoxes`. To add a map: write a `_buildXxxMap()` below, register it
- * here, and map a game mode to its id in game.js (MAP_BY_MODE). */
+/** Evenly spaced on a ring, every car facing inward (the original arena spawn). */
+export function ringSpawn(radius) {
+  return (i, n) => {
+    const angle = (i / n) * Math.PI * 2
+    return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius, heading: angle + Math.PI }
+  }
+}
+
+/** A map builder receives the GameScene and fills in:
+ *   scene.scene        the three.js scene (background, fog, lights, props)
+ *   scene.bounds       { shape: 'circle', radius } or { shape: 'rect', halfX, halfZ }
+ *   scene.colliders    solid things: { x, z, radius } circles or { x, z, hx, hz } boxes
+ *   scene.itemBoxes    via scene._addItemBox(x, z)
+ *   scene.spawnPoint   (index, count) => { x, z, heading }
+ * To add a map: write a builder, register it here and in maps.js (MAPS). */
 const MAP_BUILDERS = {
-  arena: '_buildArenaMap',
+  arena: (s) => s._buildArenaMap(),
+  harbor: buildHarborMap,
+}
+
+/** One WebGL renderer for the life of the page. Creating a second one on the
+ * same canvas (which swapping maps used to do) leaves the old renderer's
+ * cached GL state out of step with the real context and corrupts drawing. */
+let sharedRenderer = null
+function getRenderer(canvas) {
+  if (!sharedRenderer || sharedRenderer.domElement !== canvas) {
+    sharedRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
+    sharedRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+    sharedRenderer.shadowMap.enabled = false // fake blob shadows instead, real shadow maps are costly
+  }
+  return sharedRenderer
 }
 
 const BASE_FOV = 64
 
 export class GameScene {
-  constructor(canvas, mapId = 'arena') {
+  constructor(canvas, mapId = DEFAULT_MAP) {
     this.canvas = canvas
-    this.mapId = mapId
-    this.colliders = [] // {x, z, radius} static obstacle circles, used for gameplay collision
+    this.mapId = MAP_BUILDERS[mapId] ? mapId : DEFAULT_MAP
+    this.colliders = [] // static obstacles, used for gameplay collision (see MAP_BUILDERS)
+    this.bounds = { shape: 'circle', radius: ARENA_RADIUS }
+    this.spawnPoint = ringSpawn(6) // maps can replace this
 
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      powerPreference: 'high-performance',
-    })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
-    this.renderer.shadowMap.enabled = false // fake blob shadows instead, real shadow maps are costly
+    this.renderer = getRenderer(canvas)
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 120)
@@ -47,7 +71,7 @@ export class GameScene {
 
     this.itemBoxes = []
 
-    this[MAP_BUILDERS[mapId] || MAP_BUILDERS.arena]()
+    MAP_BUILDERS[this.mapId](this)
 
     this.carGroup = new THREE.Group()
     this.scene.add(this.carGroup)
@@ -159,23 +183,22 @@ export class GameScene {
   // Item box positions are map data, same spirit as the obstacles above --
   // a future second map simply defines a different (or empty) list here.
   _buildItemBoxes() {
-    const fallbackGeo = new THREE.OctahedronGeometry(0.55, 0)
-    const fallbackMat = new THREE.MeshLambertMaterial({ color: 0xf7d774, flatShading: true, emissive: 0xf7d774, emissiveIntensity: 0.45 })
-
-    this.itemBoxes = [] // { x, z, mesh }
     const count = 6
     for (let i = 0; i < count; i++) {
       const a = seededRandom(i * 9.7 + 41) * Math.PI * 2
       const r = 8 + seededRandom(i * 6.3 + 23) * (ARENA_RADIUS - 20)
-      const x = Math.cos(a) * r
-      const z = Math.sin(a) * r
-
-      // the "?" box model if it loaded, otherwise the original gem shape
-      const mesh = cloneAbilityModel('itembox') || new THREE.Mesh(fallbackGeo, fallbackMat.clone())
-      mesh.position.set(x, 1.15, z)
-      this.scene.add(mesh)
-      this.itemBoxes.push({ x, z, mesh })
+      this._addItemBox(Math.cos(a) * r, Math.sin(a) * r)
     }
+  }
+
+  /** Any map calls this for each pickup. Uses the "?" box model, or the original gem if it didn't load. */
+  _addItemBox(x, z) {
+    this._fallbackBoxGeo ||= new THREE.OctahedronGeometry(0.55, 0)
+    this._fallbackBoxMat ||= new THREE.MeshLambertMaterial({ color: 0xf7d774, flatShading: true, emissive: 0xf7d774, emissiveIntensity: 0.45 })
+    const mesh = cloneAbilityModel('itembox') || new THREE.Mesh(this._fallbackBoxGeo, this._fallbackBoxMat.clone())
+    mesh.position.set(x, 1.15, z)
+    this.scene.add(mesh)
+    this.itemBoxes.push({ x, z, mesh })
   }
 
   setItemBoxVisible(index, visible) {
@@ -248,7 +271,15 @@ export class GameScene {
     this.renderer.setSize(w, h, false)
   }
 
+  /** Free this map's GPU memory. The renderer itself is shared and stays alive. */
   dispose() {
     window.removeEventListener('resize', this._onResize)
+    this.scene.traverse((o) => {
+      if (!o.isMesh && !o.isInstancedMesh) return
+      o.geometry?.dispose()
+      const mats = Array.isArray(o.material) ? o.material : [o.material]
+      mats.forEach((m) => m?.dispose())
+    })
+    this.scene.clear()
   }
 }

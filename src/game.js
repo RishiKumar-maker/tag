@@ -1,5 +1,6 @@
 import { Car, PHYSICS } from './car.js'
-import { GameScene, ARENA_RADIUS } from './scene.js'
+import { GameScene } from './scene.js'
+import { DEFAULT_MAP, isMapId, constrainToBounds, resolveColliders } from './maps.js'
 import { ParticleSystem } from './particles.js'
 import { DriftFx } from './driftFx.js'
 import { Minimap } from './minimap.js'
@@ -17,8 +18,6 @@ import {
 } from './constants.js'
 
 const STATE_SEND_INTERVAL_MS = 1000 / STATE_SEND_HZ
-// mode -> map id (see MAP_BUILDERS in scene.js). A new map is one new entry here.
-const MAP_BY_MODE = { classic: 'arena', infection: 'arena', practice: 'arena' }
 const LOBBY_MODES = ['classic', 'infection']
 const BUMP_COOLDOWN_MS = 220
 
@@ -29,6 +28,7 @@ export class Game {
     this.particles = null
     this.driftFx = null
     this.minimap = null
+    this.mapId = DEFAULT_MAP // the lobby's chosen map (the host picks)
 
     this.localName = ''
     this.roomCode = ''
@@ -68,6 +68,11 @@ export class Game {
 
     net.onPeerJoin = (peerId) => {
       if (this.localId) net.sendPlayerInfo(this._myInfo(), peerId)
+      // a late joiner would otherwise see the default mode/map until the host next changes them
+      if (net.isHost && !this.roundActive) {
+        net.sendModeSelect(this.mode)
+        net.sendMapSelect(this.mapId)
+      }
     }
 
     net.onJoinError = ({ error }) => {
@@ -108,6 +113,13 @@ export class Game {
 
     net.onPlayerInfo = (info, peerId) => {
       this.roster.set(peerId, { id: peerId, name: info.name, color: info.color, isHost: !!info.isHost, carType: info.carType || 'roadster' })
+      this._refreshLobbyUI()
+    }
+
+    net.onMapSelect = ({ mapId }, peerId) => {
+      const host = this._hostId()
+      if (!isMapId(mapId) || (host && peerId !== host)) return // unknown map, or not from the host
+      this.mapId = mapId
       this._refreshLobbyUI()
     }
 
@@ -186,6 +198,7 @@ export class Game {
     this.roster.clear()
     this.roster.set(this.localId, { id: this.localId, name: this.localName, color, isHost, carType: carType || 'roadster' })
     this.mode = 'classic'
+    this.mapId = DEFAULT_MAP
 
     try {
       history.replaceState(null, '', `${location.pathname}?room=${code}`)
@@ -199,7 +212,7 @@ export class Game {
     this._diagInterval = setInterval(() => this.network.logConnectionStates(), 3000)
   }
 
-  async startPractice(name, carType) {
+  async startPractice(name, carType, mapId = DEFAULT_MAP) {
     this.network.leave() // in case a previous room connection is still open
     this.isPractice = true
     this.roundActive = true
@@ -214,7 +227,8 @@ export class Game {
 
     ui.showScreen('game')
     await loadAbilityModels() // before the scene exists, so item boxes can use their model
-    this._setupSceneIfNeeded('arena')
+    this.mapId = isMapId(mapId) ? mapId : DEFAULT_MAP
+    this._setupSceneIfNeeded(this.mapId)
     await this._spawnRoundCars()
     ui.setHudMode('Practice')
     ui.setPracticeHud(true)
@@ -232,11 +246,19 @@ export class Game {
     this._refreshLobbyUI()
   }
 
+  setMap(mapId) {
+    if (!this.network.isHost || this.mapId === mapId || !isMapId(mapId)) return
+    this.mapId = mapId
+    this.network.sendMapSelect(mapId)
+    this._refreshLobbyUI()
+  }
+
   _refreshLobbyUI() {
     if (ui.getCurrentScreen() !== 'lobby') return
     const players = [...this.roster.values()]
     ui.renderPlayerList(players, this.localId, this._hostId())
     ui.setModeUI(this.mode, this.network.isHost)
+    ui.setMapUI(this.mapId, this.network.isHost)
     ui.setStartControls(players.length >= 2, this.network.isHost)
   }
 
@@ -250,6 +272,7 @@ export class Game {
     const chaser = players[Math.floor(Math.random() * players.length)]
     const payload = {
       mode: this.mode,
+      mapId: this.mapId,
       players,
       chaserId: chaser.id,
       startTime: Date.now(),
@@ -275,7 +298,8 @@ export class Game {
 
     ui.showScreen('game')
     await loadAbilityModels()
-    this._setupSceneIfNeeded(MAP_BY_MODE[this.mode] || 'arena')
+    this.mapId = isMapId(payload.mapId) ? payload.mapId : DEFAULT_MAP // the host's choice, never trusted blindly
+    this._setupSceneIfNeeded(this.mapId)
     await this._spawnRoundCars()
 
     ui.setHudMode(this.mode === 'infection' ? 'Infection' : 'Classic')
@@ -307,7 +331,7 @@ export class Game {
       this.scene = new GameScene(ui.getGameCanvas(), mapId)
       this.particles = new ParticleSystem(this.scene.scene)
       this.driftFx = new DriftFx(this.scene.scene, this.particles)
-      this.minimap = new Minimap(ui.getMinimapCanvas(), ARENA_RADIUS)
+      this.minimap = new Minimap(ui.getMinimapCanvas(), this.scene.bounds, this.scene.colliders)
       this.abilityManager = new AbilityManager(this.scene)
     } catch (e) {
       console.error('Could not start the 3D renderer:', e)
@@ -330,10 +354,9 @@ export class Game {
       const { vehicle, wheels, dims } = built[i]
       const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId, vehicle, wheels, dims, name: p.name })
 
-      const angle = (i / n) * Math.PI * 2
-      const radius = 6
-      car.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
-      car.heading = angle + Math.PI
+      const spawn = this.scene.spawnPoint(i, n) // each map says where its cars start
+      car.position.set(spawn.x, 0, spawn.z)
+      car.heading = spawn.heading
       car.mesh.position.copy(car.position)
       car.mesh.rotation.y = car.heading
       this.scene.addCar(car.mesh)
@@ -492,41 +515,9 @@ export class Game {
   }
 
   _resolveCollisions(car) {
-    const distFromCenter = Math.hypot(car.position.x, car.position.z)
-    const maxDist = ARENA_RADIUS - PHYSICS.carRadius
-    if (distFromCenter > maxDist) {
-      const scale = maxDist / distFromCenter
-      car.position.x *= scale
-      car.position.z *= scale
-      const nx = car.position.x / maxDist
-      const nz = car.position.z / maxDist
-      const vDotN = car.velocity.x * nx + car.velocity.z * nz
-      if (vDotN > 0) {
-        car.velocity.x -= vDotN * nx
-        car.velocity.z -= vDotN * nz
-        this._bump('bump_wall', vDotN)
-      }
-    }
-
-    for (const c of this.scene.colliders) {
-      const dx = car.position.x - c.x
-      const dz = car.position.z - c.z
-      const dist = Math.hypot(dx, dz)
-      const minDist = c.radius + PHYSICS.carRadius
-      if (dist < minDist && dist > 0.0001) {
-        const push = minDist - dist
-        const nx = dx / dist
-        const nz = dz / dist
-        car.position.x += nx * push
-        car.position.z += nz * push
-        const vDotN = car.velocity.x * nx + car.velocity.z * nz
-        if (vDotN < 0) {
-          car.velocity.x -= vDotN * nx
-          car.velocity.z -= vDotN * nz
-          this._bump('bump_wall', -vDotN)
-        }
-      }
-    }
+    const onImpact = (speed) => this._bump('bump_wall', speed)
+    constrainToBounds(this.scene.bounds, car.position, car.velocity, PHYSICS.carRadius, onImpact)
+    resolveColliders(this.scene.colliders, car.position, car.velocity, PHYSICS.carRadius, onImpact)
 
     for (const [, other] of this.cars) {
       if (other === car) continue
@@ -698,6 +689,7 @@ export class Game {
   playAgain() {
     if (!this.network.isHost) return
     this.network.sendModeSelect(this.mode)
+    this.network.sendMapSelect(this.mapId)
     ui.showScreen('lobby')
     ui.setLobbyRoomCode(this.roomCode)
     this._refreshLobbyUI()
