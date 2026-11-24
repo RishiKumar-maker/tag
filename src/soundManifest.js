@@ -47,4 +47,11 @@ export const SOUNDS = {
   bump_car: { type: 'sfx', volume: 0.6, pitch: 0.06, when: 'You bump another car', length: '< 0.6 s', mood: 'Light metal thud' },
   bump_wall: { type: 'sfx', volume: 0.6, pitch: 0.06, when: 'You hit the fence or an obstacle', length: '< 0.6 s', mood: 'Dull crunch / thump' },
   drift_charge: { type: 'sfx', volume: 0.5, when: 'Your drift sparks level up', length: '< 0.5 s', mood: 'Rising "ching"' },
+
+  // ---- Car Soccer ----
+  ball_hit: { type: 'sfx', volume: 0.8, pitch: 0.06, where: true, when: 'A car hits the ball (louder for harder hits)', length: '< 0.5 s', mood: 'Solid thump / kick' },
+  ball_wall: { type: 'sfx', volume: 0.5, pitch: 0.06, where: true, when: 'The ball bounces off a wall', length: '< 0.4 s', mood: 'Soft boing / thud' },
+  goal_scored: { type: 'sfx', volume: 0.9, when: 'A goal is scored', length: '2–4 s', mood: 'Stadium horn plus a crowd cheer' },
+  kickoff_beep: { type: 'sfx', volume: 0.6, when: 'Each 3, 2, 1 of the kickoff countdown', length: '< 0.3 s', mood: 'Short clean beep' },
+  overtime: { type: 'sfx', volume: 0.8, when: 'The match goes to overtime', length: '1–2 s', mood: 'Tense rising sting' },
 }

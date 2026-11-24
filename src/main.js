@@ -45,6 +45,12 @@ ui.onScreenChange(() => requestAnimationFrame(applyLayout)) // buttons can only 
 document.getElementById('btn-edit-controls').addEventListener('click', openEditor)
 document.getElementById('btn-edit-controls-lobby').addEventListener('click', openEditor)
 
+// ---------------- Car Soccer: ball camera ----------------
+document.getElementById('btn-ballcam').addEventListener('click', () => game.soccer?.toggleBallCam())
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyB' && !e.repeat && !(e.target instanceof HTMLInputElement)) game.soccer?.toggleBallCam()
+})
+
 // ---------------- sound ----------------
 // Browsers only allow audio after a tap/click/key press, so the first one wakes it up.
 for (const type of ['pointerdown', 'keydown', 'touchend']) {

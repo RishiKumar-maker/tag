@@ -227,6 +227,16 @@ export class Car {
     const k = 1 - Math.exp(-10 * dt)
     this.velocity.x += ((this.position.x - px) / dt - this.velocity.x) * k
     this.velocity.z += ((this.position.z - pz) / dt - this.velocity.z) * k
+    // On a slow frame the game's time step is clamped, so the same jump in
+    // position looks like a much higher speed. Cap it at what a boosted car can
+    // really do, so a laggy host doesn't see remote cars as impossibly fast
+    // (which would make their kicks in Car Soccer absurdly strong).
+    const inferred = Math.hypot(this.velocity.x, this.velocity.z)
+    const cap = PHYSICS.maxForwardSpeed * 1.6
+    if (inferred > cap) {
+      this.velocity.x *= cap / inferred
+      this.velocity.z *= cap / inferred
+    }
     this._forward.set(Math.sin(this.heading), 0, Math.cos(this.heading))
     this.speed = this.velocity.dot(this._forward)
     this.speedFraction = THREE.MathUtils.clamp(Math.abs(this.speed) / PHYSICS.maxForwardSpeed, 0, 1)

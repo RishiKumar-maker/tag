@@ -10,7 +10,8 @@ export class Minimap {
     this.scale = bounds.shape === 'circle' ? room / bounds.radius : room / Math.max(bounds.halfX, bounds.halfZ)
   }
 
-  render(players, localId) {
+  /** extras: other things to mark, e.g. the soccer ball: [{ x, z, color, size }] */
+  render(players, localId, extras = []) {
     const ctx = this.ctx
     const s = this.size
     const scale = this.scale
@@ -23,13 +24,24 @@ export class Minimap {
     } else {
       const w = this.bounds.halfX * scale * 2 + 8
       const h = this.bounds.halfZ * scale * 2 + 8
-      ctx.roundRect(s / 2 - w / 2, s / 2 - h / 2, w, h, 8)
+      const r = this.bounds.shape === 'rrect' ? this.bounds.radius * scale + 4 : 8
+      ctx.roundRect(s / 2 - w / 2, s / 2 - h / 2, w, h, r)
     }
     ctx.fill()
 
     ctx.fillStyle = 'rgba(255,255,255,0.32)'
     for (const b of this.boxes) {
       ctx.fillRect(s / 2 + (b.x - b.hx) * scale, s / 2 + (b.z - b.hz) * scale, b.hx * 2 * scale, b.hz * 2 * scale)
+    }
+
+    for (const e of extras) {
+      ctx.beginPath()
+      ctx.arc(s / 2 + e.x * scale, s / 2 + e.z * scale, e.size || 3, 0, Math.PI * 2)
+      ctx.fillStyle = e.color
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+      ctx.lineWidth = 1
+      ctx.stroke()
     }
 
     for (const p of players) {

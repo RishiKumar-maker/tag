@@ -8,6 +8,7 @@
 export const MAPS = {
   arena: { id: 'arena', name: 'Meadow Arena', blurb: 'Wide-open round field. Big, sweeping drifts.' },
   harbor: { id: 'harbor', name: 'Harbor Yard', blurb: 'Container lanes and tight corners. Cut your chaser off.' },
+  stadium: { id: 'stadium', name: 'Soccer Stadium', blurb: 'A floodlit pitch with two goals and boost pads. Home of Car Soccer.' },
 }
 export const MAP_IDS = Object.keys(MAPS)
 export const DEFAULT_MAP = 'arena'
@@ -18,7 +19,27 @@ export function isMapId(id) {
 }
 
 // ------------------------------------------------------------------ bounds
-// bounds is { shape: 'circle', radius } or { shape: 'rect', halfX, halfZ }.
+// bounds is { shape: 'circle', radius }, { shape: 'rect', halfX, halfZ } or
+// { shape: 'rrect', halfX, halfZ, radius } (a rectangle with rounded corners).
+
+/** Nearest point inside a rounded rectangle (half extents hx, hz; corner
+ * radius cr). A point already inside comes back unchanged. */
+export function projectRoundedRect(px, pz, hx, hz, cr) {
+  const sx = px < 0 ? -1 : 1
+  const sz = pz < 0 ? -1 : 1
+  const ax = Math.abs(px)
+  const az = Math.abs(pz)
+  const cx = hx - cr
+  const cz = hz - cr
+  if (ax > cx && az > cz) {
+    const dx = ax - cx
+    const dz = az - cz
+    const d = Math.hypot(dx, dz)
+    if (d > cr) return { x: sx * (cx + (dx / d) * cr), z: sz * (cz + (dz / d) * cr) }
+    return { x: px, z: pz }
+  }
+  return { x: sx * Math.min(ax, hx), z: sz * Math.min(az, hz) }
+}
 
 /** Keep a car (a circle of `radius`) inside the bounds. Mutates pos and vel.
  * Calls onImpact(speed) with how hard it hit, if it hit. */
@@ -31,6 +52,17 @@ export function constrainToBounds(bounds, pos, vel, radius, onImpact) {
     pos.x *= k
     pos.z *= k
     pushOutwardVelocityOut(vel, pos.x / max, pos.z / max, onImpact)
+    return
+  }
+  if (bounds.shape === 'rrect') {
+    const p = projectRoundedRect(pos.x, pos.z, bounds.halfX - radius, bounds.halfZ - radius, Math.max(bounds.radius - radius, 0.5))
+    const dx = p.x - pos.x
+    const dz = p.z - pos.z
+    const d = Math.hypot(dx, dz)
+    if (d < 1e-9) return
+    pos.x = p.x
+    pos.z = p.z
+    pushOutwardVelocityOut(vel, -dx / d, -dz / d, onImpact) // outward normal = away from where it was pulled back to
     return
   }
   const maxX = bounds.halfX - radius
@@ -58,6 +90,10 @@ function pushOutwardVelocityOut(vel, nx, nz, onImpact) {
 
 export function insideBounds(bounds, x, z, margin = 0) {
   if (bounds.shape === 'circle') return Math.hypot(x, z) <= bounds.radius - margin
+  if (bounds.shape === 'rrect') {
+    const p = projectRoundedRect(x, z, bounds.halfX - margin, bounds.halfZ - margin, Math.max(bounds.radius - margin, 0.5))
+    return Math.hypot(p.x - x, p.z - z) < 1e-9
+  }
   return Math.abs(x) <= bounds.halfX - margin && Math.abs(z) <= bounds.halfZ - margin
 }
 

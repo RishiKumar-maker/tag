@@ -2,6 +2,7 @@ import * as THREE from '../lib/three.module.min.js'
 import { cloneAbilityModel } from './abilityModels.js'
 import { DEFAULT_MAP } from './maps.js'
 import { buildHarborMap } from './harborMap.js'
+import { buildStadiumMap } from './stadiumMap.js'
 
 export const ARENA_RADIUS = 44
 
@@ -28,10 +29,13 @@ export function ringSpawn(radius) {
  *   scene.colliders    solid things: { x, z, radius } circles or { x, z, hx, hz } boxes
  *   scene.itemBoxes    via scene._addItemBox(x, z)
  *   scene.spawnPoint   (index, count) => { x, z, heading }
+ * and optionally: followHeight/followDistance (camera), cameraBounds ({ halfX, halfZ }:
+ * keeps the camera inside the walls), boostPads.
  * To add a map: write a builder, register it here and in maps.js (MAPS). */
 const MAP_BUILDERS = {
   arena: (s) => s._buildArenaMap(),
   harbor: buildHarborMap,
+  stadium: buildStadiumMap,
 }
 
 /** One WebGL renderer for the life of the page. Creating a second one on the
@@ -56,6 +60,10 @@ export class GameScene {
     this.colliders = [] // static obstacles, used for gameplay collision (see MAP_BUILDERS)
     this.bounds = { shape: 'circle', radius: ARENA_RADIUS }
     this.spawnPoint = ringSpawn(6) // maps can replace this
+    this.cameraBounds = null
+    this.ballCamTarget = null // { x, z } while the ball cam is on (Car Soccer sets it each frame)
+    this._ballCamHeading = null
+    this.boostPads = []
 
     this.renderer = getRenderer(canvas)
 
@@ -224,26 +232,49 @@ export class GameScene {
   updateCamera(car, dt) {
     const anim = car.animator
 
-    // While sliding, the camera swings part-way toward the direction the car is
-    // actually travelling instead of where it points, so a drift shows the
-    // car's flank. (Only when moving forward; reversing would flip it.)
+    // Ball cam: swing round behind the car so the ball stays in view; otherwise
+    // follow the way the car points. While sliding, the camera swings part-way
+    // toward the direction of travel so a drift shows the car's flank.
     let camHeading = car.heading
-    if (!this.reducedMotion && car.speed > 3 && anim.driftBlend > 0.01) {
-      const velHeading = Math.atan2(car.velocity.x, car.velocity.z)
-      const diff = ((velHeading - car.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI
-      camHeading += diff * 0.3 * anim.driftBlend
+    let lookAhead = null
+    const ball = this.ballCamTarget
+    if (ball) {
+      const dx = ball.x - car.position.x
+      const dz = ball.z - car.position.z
+      const dist = Math.hypot(dx, dz)
+      if (this._ballCamHeading === null) this._ballCamHeading = car.heading
+      if (dist > 3) {
+        const want = Math.atan2(dx, dz)
+        const diff = ((want - this._ballCamHeading + Math.PI * 3) % (Math.PI * 2)) - Math.PI
+        this._ballCamHeading += diff * (1 - Math.exp(-5 * dt))
+        const reach = Math.min(dist, 14) * 0.25
+        lookAhead = { x: (dx / dist) * reach, z: (dz / dist) * reach }
+      }
+      camHeading = this._ballCamHeading
+    } else {
+      this._ballCamHeading = null
+      if (!this.reducedMotion && car.speed > 3 && anim.driftBlend > 0.01) {
+        const velHeading = Math.atan2(car.velocity.x, car.velocity.z)
+        const diff = ((velHeading - car.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI
+        camHeading += diff * 0.3 * anim.driftBlend
+      }
     }
 
-    const desiredX = car.position.x - Math.sin(camHeading) * this.followDistance
-    const desiredZ = car.position.z - Math.cos(camHeading) * this.followDistance
+    let desiredX = car.position.x - Math.sin(camHeading) * this.followDistance
+    let desiredZ = car.position.z - Math.cos(camHeading) * this.followDistance
     const desiredY = this.followHeight
+    if (this.cameraBounds) {
+      // never end up behind a wall, where it would hide the car
+      desiredX = Math.max(-this.cameraBounds.halfX + 1.5, Math.min(this.cameraBounds.halfX - 1.5, desiredX))
+      desiredZ = Math.max(-this.cameraBounds.halfZ + 1.5, Math.min(this.cameraBounds.halfZ - 1.5, desiredZ))
+    }
 
     const t = 1 - Math.exp(-this.camDecay * dt)
     this.camera.position.x += (desiredX - this.camera.position.x) * t
     this.camera.position.y += (desiredY - this.camera.position.y) * t
     this.camera.position.z += (desiredZ - this.camera.position.z) * t
 
-    this._camLook.set(car.position.x, 0.6, car.position.z)
+    this._camLook.set(car.position.x + (lookAhead ? lookAhead.x : 0), 0.6, car.position.z + (lookAhead ? lookAhead.z : 0))
     this.camera.lookAt(this._camLook)
 
     if (this.reducedMotion) return

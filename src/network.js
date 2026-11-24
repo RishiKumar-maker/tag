@@ -59,6 +59,9 @@ export class Network {
     this.onPlayerInfo = null
     this.onModeSelect = null
     this.onMapSelect = null
+    this.onBallState = null
+    this.onBallHit = null
+    this.onMatchEvent = null
     this.onRoundStart = null
     this.onCarState = null
     this.onTagEvent = null
@@ -88,6 +91,9 @@ export class Network {
       playerInfo: make('player-info'),
       modeSelect: make('mode-select'),
       mapSelect: make('map-select'),
+      ballState: make('ball-state'),
+      ballHit: make('ball-hit'),
+      matchEvent: make('match-event'),
       roundStart: make('round-start'),
       carState: make('car-state'),
       tagEvent: make('tag-event'),
@@ -100,6 +106,9 @@ export class Network {
     this._actions.playerInfo.onMessage = (data, ctx) => this.onPlayerInfo?.(data, ctx.peerId)
     this._actions.modeSelect.onMessage = (data) => this.onModeSelect?.(data)
     this._actions.mapSelect.onMessage = (data, ctx) => this.onMapSelect?.(data, ctx.peerId)
+    this._actions.ballState.onMessage = (data, ctx) => this.onBallState?.(data, ctx.peerId)
+    this._actions.ballHit.onMessage = (data, ctx) => this.onBallHit?.(data, ctx.peerId)
+    this._actions.matchEvent.onMessage = (data, ctx) => this.onMatchEvent?.(data, ctx.peerId)
     this._actions.roundStart.onMessage = (data) => this.onRoundStart?.(data)
     this._actions.carState.onMessage = (data, ctx) => this.onCarState?.(data, ctx.peerId)
     this._actions.tagEvent.onMessage = (data) => this.onTagEvent?.(data)
@@ -148,6 +157,15 @@ export class Network {
   }
   sendModeSelect(mode) {
     this._actions.modeSelect?.send({ mode })
+  }
+  sendBallState(state) {
+    this._actions.ballState?.send(state)
+  }
+  sendBallHit(hit) {
+    this._actions.ballHit?.send(hit)
+  }
+  sendMatchEvent(ev) {
+    this._actions.matchEvent?.send(ev)
   }
   sendMapSelect(mapId) {
     this._actions.mapSelect?.send({ mapId })

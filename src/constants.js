@@ -52,3 +52,6 @@ export function makeRoomCode(length = 5) {
 export function randomPlayerName() {
   return 'Racer' + Math.floor(100 + Math.random() * 900)
 }
+
+// Car Soccer: three minutes of play, then sudden-death overtime if it's level
+export const SOCCER_DURATION_MS = 180000

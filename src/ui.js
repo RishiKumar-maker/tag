@@ -1,4 +1,5 @@
 import { MAPS } from './maps.js'
+import { TEAMS } from './soccerLayout.js'
 const el = (id) => document.getElementById(id)
 
 const screens = {
@@ -90,6 +91,7 @@ export function renderPlayerList(players, localId, hostId) {
 const MODE_DESCRIPTIONS = {
   classic: "One chaser. Get tagged, you're it.",
   infection: 'Tagged players join the chase. Last one standing wins.',
+  soccer: 'Two teams, one big ball. Knock it into their goal. 3 minutes, then sudden-death overtime. Played on the Stadium.',
 }
 
 export function setModeUI(mode, isHost) {
@@ -101,11 +103,11 @@ export function setModeUI(mode, isHost) {
   el('mode-desc').textContent = MODE_DESCRIPTIONS[mode] || ''
 }
 
-export function setMapUI(mapId, isHost) {
+export function setMapUI(mapId, isHost, locked = false) {
   const seg = el('map-segmented')
   seg.querySelectorAll('.segment').forEach((btn) => btn.classList.toggle('active', btn.dataset.map === mapId))
-  seg.classList.toggle('readonly', !isHost)
-  el('map-desc').textContent = MAPS[mapId]?.blurb || ''
+  seg.classList.toggle('readonly', !isHost || locked) // locked: Car Soccer only plays on the stadium
+  el('map-desc').textContent = MAPS[mapId] ? `${MAPS[mapId].name}. ${MAPS[mapId].blurb}` : ''
 }
 
 /** The menu's practice-map picker (local only; nothing to sync). */
@@ -203,4 +205,47 @@ export function getMinimapCanvas() {
 }
 export function getGameCanvas() {
   return el('game-canvas')
+}
+
+// ---------------------------------------------------------------- Car Soccer HUD
+
+/** Turn the soccer HUD (scoreboard, ball-cam button) on or off. */
+export function setSoccerHud(on, { practice = false } = {}) {
+  document.body.classList.toggle('mode-soccer', on)
+  el('scoreboard').classList.toggle('hidden', !on)
+  if (on) {
+    el('sb-dot-a').style.background = TEAMS[0].css
+    el('sb-dot-b').style.background = TEAMS[1].css
+    lastScoreboard = ''
+  }
+}
+
+let lastScoreboard = ''
+export function setScoreboard({ a, b, clock, mine }) {
+  const key = `${a}|${b}|${clock}|${mine}`
+  if (key === lastScoreboard) return
+  lastScoreboard = key
+  el('sb-score-a').textContent = String(a)
+  el('sb-score-b').textContent = String(b)
+  el('sb-clock').textContent = clock
+  el('sb-team-a').classList.toggle('mine', mine === 0)
+  el('sb-team-b').classList.toggle('mine', mine === 1)
+}
+
+export function setBallCamActive(on) {
+  const b = el('btn-ballcam')
+  b.classList.toggle('active', on)
+  b.setAttribute('aria-pressed', String(on))
+}
+
+let bannerTimer = null
+/** The big message in the middle of the screen: countdown digits, GOAL!, OVERTIME.
+ * Pass ms to have it clear itself; '' clears it now. */
+export function setCenterBanner(text, variant, sub = '', ms = 0) {
+  const b = el('center-banner')
+  clearTimeout(bannerTimer)
+  el('center-banner-text').textContent = text
+  el('center-banner-sub').textContent = sub
+  b.className = 'center-banner' + (text ? ' show ' + (variant || '') : '')
+  if (text && ms) bannerTimer = setTimeout(() => setCenterBanner('', ''), ms)
 }

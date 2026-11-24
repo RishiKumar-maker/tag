@@ -1,5 +1,7 @@
 import { Car, PHYSICS } from './car.js'
 import { GameScene } from './scene.js'
+import { SoccerController, buildSoccerResults, assignTeams } from './soccerGame.js'
+import { TEAMS } from './soccerLayout.js'
 import { DEFAULT_MAP, isMapId, constrainToBounds, resolveColliders } from './maps.js'
 import { ParticleSystem } from './particles.js'
 import { DriftFx } from './driftFx.js'
@@ -14,11 +16,11 @@ import {
   PLAYER_COLORS, hexToCss, TAG_RADIUS, CHASER_IMMUNITY_MS, CHASER_SPEED_MULTIPLIER,
   CLASSIC_DURATION_MS, INFECTION_DURATION_MS, STATE_SEND_HZ, SPEED_DISPLAY_SCALE,
   ITEM_BOX_RADIUS, ITEM_BOX_RESPAWN_MS,
-  makeRoomCode, randomPlayerName,
-} from './constants.js'
+  makeRoomCode, randomPlayerName, SOCCER_DURATION_MS } from './constants.js'
 
 const STATE_SEND_INTERVAL_MS = 1000 / STATE_SEND_HZ
-const LOBBY_MODES = ['classic', 'infection']
+const LOBBY_MODES = ['classic', 'infection', 'soccer']
+const SOCCER_MAP = 'stadium' // Car Soccer is only played here
 const BUMP_COOLDOWN_MS = 220
 
 export class Game {
@@ -29,6 +31,8 @@ export class Game {
     this.driftFx = null
     this.minimap = null
     this.mapId = DEFAULT_MAP // the lobby's chosen map (the host picks)
+    this.soccer = null // a SoccerController while Car Soccer (or stadium practice) is running
+    this.teams = {} // Car Soccer: { playerId: 0 | 1 }
 
     this.localName = ''
     this.roomCode = ''
@@ -81,12 +85,23 @@ export class Game {
     }
 
     net.onPeerLeave = (peerId) => {
+      const wasHost = peerId === this._hostId()
       this.roster.delete(peerId)
       const car = this.cars.get(peerId)
       if (car && this.scene) this.scene.removeCar(car.mesh)
       this.cars.delete(peerId)
 
-      if (this.roundActive) {
+      if (this.roundActive && this.mode === 'soccer') {
+        this.roundPlayers = this.roundPlayers.filter((p) => p.id !== peerId)
+        if (wasHost) {
+          // the host runs the ball and the clock: without them the match can't continue
+          ui.toast('The host left, so the match ended.')
+          this.leaveToMenu()
+          return
+        }
+        this.soccer?.onPeerLeave(peerId)
+        if (this.roundPlayers.length < 2 && this.network.isHost) this._hostEndRound(Date.now(), { soccer: this._soccerFinal() })
+      } else if (this.roundActive) {
         this.roundPlayers = this.roundPlayers.filter((p) => p.id !== peerId)
         this.chaserSet.delete(peerId)
 
@@ -116,6 +131,10 @@ export class Game {
       this._refreshLobbyUI()
     }
 
+    net.onBallState = (d, peerId) => this.soccer?.onBallState(d, peerId)
+    net.onBallHit = (d, peerId) => this.soccer?.onBallHit(d, peerId)
+    net.onMatchEvent = (d, peerId) => this.soccer?.onMatchEvent(d, peerId)
+
     net.onMapSelect = ({ mapId }, peerId) => {
       const host = this._hostId()
       if (!isMapId(mapId) || (host && peerId !== host)) return // unknown map, or not from the host
@@ -126,6 +145,7 @@ export class Game {
     net.onModeSelect = ({ mode }) => {
       if (!LOBBY_MODES.includes(mode)) return // e.g. the retired Traffic Dash from an older copy of the game
       this.mode = mode
+      if (mode === 'soccer') this.mapId = SOCCER_MAP
       if (ui.getCurrentScreen() === 'results') ui.showScreen('lobby')
       this._refreshLobbyUI()
     }
@@ -234,6 +254,14 @@ export class Game {
     ui.setPracticeHud(true)
     ui.setStatusBanner('Free Drive', '')
     this._resetItemsAndAbilities()
+    this.soccer?.dispose()
+    this.soccer = null
+    if (this.mapId === SOCCER_MAP) {
+      // the stadium in practice is a training pitch: you, the ball, and both goals
+      this.teams = {}
+      this.soccer = new SoccerController(this, { practice: true })
+      this.soccer.begin()
+    }
     audio.play('round_start')
   }
 
@@ -243,11 +271,15 @@ export class Game {
     if (!this.network.isHost || this.mode === mode) return
     this.mode = mode
     this.network.sendModeSelect(mode)
+    if (mode === 'soccer' && this.mapId !== SOCCER_MAP) {
+      this.mapId = SOCCER_MAP // Car Soccer only works on the pitch
+      this.network.sendMapSelect(this.mapId)
+    }
     this._refreshLobbyUI()
   }
 
   setMap(mapId) {
-    if (!this.network.isHost || this.mapId === mapId || !isMapId(mapId)) return
+    if (!this.network.isHost || this.mapId === mapId || !isMapId(mapId) || this.mode === 'soccer') return
     this.mapId = mapId
     this.network.sendMapSelect(mapId)
     this._refreshLobbyUI()
@@ -258,7 +290,7 @@ export class Game {
     const players = [...this.roster.values()]
     ui.renderPlayerList(players, this.localId, this._hostId())
     ui.setModeUI(this.mode, this.network.isHost)
-    ui.setMapUI(this.mapId, this.network.isHost)
+    ui.setMapUI(this.mapId, this.network.isHost, this.mode === 'soccer')
     ui.setStartControls(players.length >= 2, this.network.isHost)
   }
 
@@ -270,14 +302,16 @@ export class Game {
       return
     }
     const chaser = players[Math.floor(Math.random() * players.length)]
+    const soccer = this.mode === 'soccer'
     const payload = {
       mode: this.mode,
-      mapId: this.mapId,
+      mapId: soccer ? SOCCER_MAP : this.mapId,
       players,
       chaserId: chaser.id,
       startTime: Date.now(),
-      durationMs: this.mode === 'infection' ? INFECTION_DURATION_MS : CLASSIC_DURATION_MS,
+      durationMs: soccer ? SOCCER_DURATION_MS : this.mode === 'infection' ? INFECTION_DURATION_MS : CLASSIC_DURATION_MS,
     }
+    if (soccer) payload.teams = assignTeams(players.map((p) => p.id))
     this.network.sendRoundStart(payload)
     await this._beginRound(payload)
   }
@@ -291,21 +325,30 @@ export class Game {
     this.roundEnded = false
     this.roundDurationMs = payload.durationMs
     this.roundStartTime = payload.startTime
-    this.chaserSet = new Set([payload.chaserId])
+    const soccer = this.mode === 'soccer'
+    this.chaserSet = new Set(soccer ? [] : [payload.chaserId])
     this.catchOrder = []
-    this.chaserIntervals = [{ id: payload.chaserId, start: payload.startTime, end: null }]
-    this.immunityUntil = new Map([[payload.chaserId, payload.startTime + CHASER_IMMUNITY_MS]])
+    this.chaserIntervals = soccer ? [] : [{ id: payload.chaserId, start: payload.startTime, end: null }]
+    this.immunityUntil = new Map(soccer ? [] : [[payload.chaserId, payload.startTime + CHASER_IMMUNITY_MS]])
+    this.teams = soccer ? this._validTeams(payload.teams, payload.players) : {}
 
+    this.soccer?.dispose()
+    this.soccer = null
     ui.showScreen('game')
     await loadAbilityModels()
-    this.mapId = isMapId(payload.mapId) ? payload.mapId : DEFAULT_MAP // the host's choice, never trusted blindly
+    this.mapId = soccer ? SOCCER_MAP : isMapId(payload.mapId) ? payload.mapId : DEFAULT_MAP // the host's choice, never trusted blindly
     this._setupSceneIfNeeded(this.mapId)
     await this._spawnRoundCars()
 
-    ui.setHudMode(this.mode === 'infection' ? 'Infection' : 'Classic')
-    this._updateStatusBanner()
+    ui.setHudMode(soccer ? 'Car Soccer' : this.mode === 'infection' ? 'Infection' : 'Classic')
     this._resetItemsAndAbilities()
-    audio.play('round_start')
+    if (soccer) {
+      this.soccer = new SoccerController(this, { teams: this.teams, durationMs: payload.durationMs })
+      this.soccer.begin()
+    } else {
+      this._updateStatusBanner()
+      audio.play('round_start')
+    }
   }
 
   _resetItemsAndAbilities() {
@@ -341,18 +384,32 @@ export class Game {
     }
   }
 
+  /** Teams come from the host: keep only real players on team 0 or 1, and
+   * fall back to alternating by id (the same on every machine) if it's junk. */
+  _validTeams(teams, players) {
+    const ok = teams && typeof teams === 'object' && players.every((p) => teams[p.id] === 0 || teams[p.id] === 1)
+    if (ok) return Object.fromEntries(players.map((p) => [p.id, teams[p.id]]))
+    return Object.fromEntries([...players].sort((a, b) => a.id.localeCompare(b.id)).map((p, i) => [p.id, i % 2]))
+  }
+
+  /** Cars take their team's colour in Car Soccer, whatever the player picked. */
+  _carColorFor(p) {
+    const t = this.mode === 'soccer' ? TEAMS[this.teams[p.id]] : null
+    return t ? t.color : parseInt(p.color.slice(1), 16)
+  }
+
   async _spawnRoundCars() {
     for (const car of this.cars.values()) this.scene.removeCar(car.mesh)
     this.cars.clear()
 
     const n = this.roundPlayers.length
     const built = await Promise.all(
-      this.roundPlayers.map((p) => buildCar(p.carType || 'roadster', parseInt(p.color.slice(1), 16)))
+      this.roundPlayers.map((p) => buildCar(p.carType || 'roadster', this._carColorFor(p)))
     )
 
     this.roundPlayers.forEach((p, i) => {
       const { vehicle, wheels, dims } = built[i]
-      const car = new Car({ color: parseInt(p.color.slice(1), 16), isLocal: p.id === this.localId, vehicle, wheels, dims, name: p.name })
+      const car = new Car({ color: this._carColorFor(p), isLocal: p.id === this.localId, vehicle, wheels, dims, name: p.name })
 
       const spawn = this.scene.spawnPoint(i, n) // each map says where its cars start
       car.position.set(spawn.x, 0, spawn.z)
@@ -390,7 +447,7 @@ export class Game {
     const localCar = this.cars.get(this.localId)
 
     if (localCar) {
-      localCar.applyInput(input)
+      localCar.applyInput(this.soccer ? this.soccer.filterInput(input) : input) // frozen during kickoff countdowns
       localCar.step(dt)
       this._resolveCollisions(localCar)
 
@@ -416,6 +473,8 @@ export class Game {
     this.driftFx.update()
     this.particles.update(dt)
 
+    this.soccer?.update(dt, localCar)
+
     this.scene.animateItemBoxes(dt, this._elapsed)
     this.abilityManager?.update(dt, this.cars)
     this._checkAbilityHits(localCar)
@@ -425,8 +484,10 @@ export class Game {
 
     this._maybeSendState()
 
-    this._checkTagging()
-    this._updateTimerUI()
+    if (this.mode !== 'soccer') {
+      this._checkTagging()
+      this._updateTimerUI()
+    }
     this._updateMinimap()
   }
 
@@ -607,7 +668,7 @@ export class Game {
   }
 
   _updateTimerUI() {
-    if (!this.roundActive || this.roundEnded || this.isPractice) return
+    if (!this.roundActive || this.roundEnded || this.isPractice || this.mode === 'soccer') return
     const remaining = this.roundDurationMs - (Date.now() - this.roundStartTime)
     ui.setHudTimer(Math.max(0, remaining))
     const secsLeft = Math.ceil(remaining / 1000)
@@ -619,43 +680,70 @@ export class Game {
   }
 
   _updateMinimap() {
+    const soccer = this.mode === 'soccer'
     const players = this.roundPlayers.map((p) => {
       const car = this.cars.get(p.id)
       return {
         id: p.id,
         x: car ? car.position.x : 0,
         z: car ? car.position.z : 0,
-        color: p.color,
+        color: soccer ? TEAMS[this.teams[p.id]]?.css || p.color : p.color,
         isChaser: this.chaserSet.has(p.id),
       }
     })
-    this.minimap.render(players, this.localId)
+    const extras = this.soccer ? [{ x: this.soccer.ball.x, z: this.soccer.ball.z, color: '#ffffff', size: 4 }] : []
+    this.minimap.render(players, this.localId, extras)
   }
 
   // ---------------- round end ----------------
 
-  _hostEndRound(timestamp) {
+  /** The score so far, as a final result (used if a match has to stop early). */
+  _soccerFinal() {
+    const m = this.soccer?.match
+    const scores = m ? [...m.scores] : [0, 0]
+    return { scores, winner: scores[0] === scores[1] ? null : scores[0] > scores[1] ? 0 : 1, goals: this.soccer?.goalsBy || {}, own: this.soccer?.ownGoalsBy || {} }
+  }
+
+  _hostEndRound(timestamp, extra = {}) {
     if (this.roundEnded) return
     this.roundEnded = true
-    const payload = { endTime: timestamp }
+    const payload = { endTime: timestamp, ...extra }
     this.network.sendRoundEnd(payload)
     this._finishRound(payload)
   }
 
-  _finishRound({ endTime }) {
+  _finishRound({ endTime, soccer }) {
     if (!this.roundActive) return
     this.roundActive = false
     this.roundEnded = true
     audio.stopDriving()
     audio.play('round_end')
 
-    const last = this.chaserIntervals[this.chaserIntervals.length - 1]
-    if (last && last.end === null) last.end = endTime
-    const results = this.mode === 'infection' ? this._computeInfectionResults() : this._computeClassicResults(endTime)
-    const title = this.mode === 'infection' ? 'Infection Results' : 'Round Results'
+    let results
+    let title
+    if (this.mode === 'soccer') {
+      const final = this._validSoccerFinal(soccer)
+      ;({ title, rows: results } = buildSoccerResults(final, this.roundPlayers, this.teams))
+      this.soccer?.dispose()
+      this.soccer = null
+    } else {
+      const last = this.chaserIntervals[this.chaserIntervals.length - 1]
+      if (last && last.end === null) last.end = endTime
+      results = this.mode === 'infection' ? this._computeInfectionResults() : this._computeClassicResults(endTime)
+      title = this.mode === 'infection' ? 'Infection Results' : 'Round Results'
+    }
 
     ui.setResults({ title, rows: results, isHost: this.network.isHost })
     ui.showScreen('results')
+  }
+
+  /** The host's final score, checked before we show it (it arrives over the network). */
+  _validSoccerFinal(raw) {
+    const num = (v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0)
+    const book = (o) => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).map(([k, v]) => [k, num(v)]))
+    const scores = Array.isArray(raw?.scores) ? [num(raw.scores[0]), num(raw.scores[1])] : [0, 0]
+    const winner = scores[0] === scores[1] ? null : scores[0] > scores[1] ? 0 : 1
+    return { scores, winner, goals: book(raw?.goals), own: book(raw?.own) }
   }
 
   _computeClassicResults(endTime) {
@@ -707,6 +795,8 @@ export class Game {
     this.driftFx?.clear()
     this.cars.clear()
     this.abilityManager?.clear()
+    this.soccer?.dispose()
+    this.soccer = null
     audio.stopDriving()
     this.inventory = null
     ui.setInventory(null)
