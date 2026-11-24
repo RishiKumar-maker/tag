@@ -47,8 +47,9 @@
 
     <div class="menu-divider"><span>or</span></div>
     <div class="segmented practice-map" id="practice-map-segmented" role="group" aria-label="Practice map">
-      <button class="segment active" data-map="arena" type="button">Meadow Arena</button>
-      <button class="segment" data-map="harbor" type="button">Harbor Yard</button>
+      <button class="segment active" data-map="arena" type="button">Meadow</button>
+      <button class="segment" data-map="harbor" type="button">Harbor</button>
+      <button class="segment" data-map="stadium" type="button">Stadium</button>
     </div>
     <button id="btn-practice" class="btn btn-ghost btn-wide" type="button">Practice Solo</button>
     <p class="hint">Try the drift controls and maps on your own — no other players needed.</p>
@@ -74,6 +75,7 @@
       <div class="segmented" id="mode-segmented">
         <button class="segment active" data-mode="classic" type="button">Classic</button>
         <button class="segment" data-mode="infection" type="button">Infection</button>
+        <button class="segment" data-mode="soccer" type="button">Car Soccer</button>
       </div>
       <p class="mode-desc" id="mode-desc">One chaser. Get tagged, you're it.</p>
     </div>
@@ -81,8 +83,9 @@
     <div class="mode-select">
       <span class="field-label">Map</span>
       <div class="segmented" id="map-segmented">
-        <button class="segment active" data-map="arena" type="button">Meadow Arena</button>
-        <button class="segment" data-map="harbor" type="button">Harbor Yard</button>
+        <button class="segment active" data-map="arena" type="button">Meadow</button>
+        <button class="segment" data-map="harbor" type="button">Harbor</button>
+        <button class="segment" data-map="stadium" type="button">Stadium</button>
       </div>
       <p class="mode-desc" id="map-desc"></p>
     </div>
@@ -102,14 +105,21 @@
 
   <div class="hud">
     <div class="hud-top">
+      <div class="scoreboard hidden" id="scoreboard">
+        <span class="sb-team" id="sb-team-a"><i class="sb-dot" id="sb-dot-a"></i><b id="sb-score-a">0</b></span>
+        <span class="sb-clock" id="sb-clock">3:00</span>
+        <span class="sb-team" id="sb-team-b"><b id="sb-score-b">0</b><i class="sb-dot" id="sb-dot-b"></i></span>
+      </div>
       <div class="hud-pill mode-badge" id="hud-mode-badge">Classic</div>
       <div class="hud-pill timer-pill" id="hud-timer">3:00</div>
+      <button id="btn-ballcam" class="hud-pill ballcam-btn" type="button" aria-label="Toggle ball camera (B)" aria-pressed="true"><span class="bc-text">Ball cam</span><span class="bc-icon">&#127909;</span></button>
       <button id="btn-sound-hud" class="hud-pill hud-icon-btn sound-btn" type="button" aria-label="Mute or unmute sound">&#128266;</button>
       <button id="btn-fullscreen" class="hud-pill hud-icon-btn fullscreen-btn" type="button" aria-label="Toggle fullscreen">&#9974;</button>
       <button id="btn-leave-game" class="hud-pill hud-leave" type="button" aria-label="Leave game">Leave</button>
     </div>
 
     <div class="status-banner" id="status-banner"></div>
+    <div class="center-banner" id="center-banner" aria-live="assertive"><span id="center-banner-text"></span><small id="center-banner-sub"></small></div>
 
     <div class="speedo-wrap">
       <svg class="speedo-gauge" viewBox="0 0 100 70" aria-hidden="true">
@@ -207,11 +217,15 @@
       <li><strong>WASD / Arrows</strong> — drive</li>
       <li><strong>Space / Shift</strong> — drift (hold it while turning)</li>
       <li><strong>E</strong> — use your held ability</li>
+      <li><strong>B</strong> — switch the ball camera on or off (Car Soccer)</li>
     </ul>
     <p class="help-note">On touch devices the buttons appear on screen. Tap <strong>Edit controls</strong> on the menu to drag them wherever your thumbs like, resize them, or swap sides.</p>
 
     <h3 class="help-heading">Tag</h3>
     <p class="help-note">Classic: one chaser, tag passes to whoever they touch. Infection: tagged players join the chase — last runner standing wins. The chaser is faster than everyone else.</p>
+
+    <h3 class="help-heading">Car Soccer</h3>
+    <p class="help-note">Two teams, one big ball. Drive it into the other team's goal: your team's goal is the one in your colour. Three minutes on the clock, and if it's level you play sudden-death overtime. After every goal everyone resets for a 3-2-1 kickoff. Drive over the glowing mint pads for a quick speed burst. There are no power-ups or tagging in this mode.</p>
 
     <h3 class="help-heading">Power-ups</h3>
     <p class="help-note">Drive over a floating item box to grab a random ability — one at a time, press E or tap USE to activate it.</p>

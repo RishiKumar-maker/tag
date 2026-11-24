@@ -765,3 +765,95 @@ body[data-screen="game"] .sound-btn-floating { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+
+/* ---------- Car Soccer HUD ---------- */
+.scoreboard {
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: var(--font-display);
+}
+.scoreboard.hidden { display: none; }
+.sb-team { display: flex; align-items: center; gap: 6px; font-size: 22px; font-weight: 700; padding: 0 4px; border-radius: 999px; }
+.sb-team.mine { box-shadow: 0 2px 0 0 currentColor; }
+.sb-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.sb-clock { min-width: 66px; text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+
+body.mode-soccer #hud-mode-badge,
+body.mode-soccer #hud-timer,
+body.mode-soccer .inventory-wrap,
+body.mode-soccer #btn-touch-use { display: none; }
+
+.ballcam-btn { display: none; cursor: pointer; color: var(--text-primary); }
+body.mode-soccer .ballcam-btn { display: inline-flex; align-items: center; }
+.ballcam-btn.active { background: var(--accent-mint); color: #1d2a26; border-color: transparent; }
+.bc-icon { display: none; }
+@media (max-width: 560px) {
+  .bc-text { display: none; }
+  .bc-icon { display: inline; }
+  .ballcam-btn { padding: 8px 12px; }
+  .scoreboard { padding: 5px 10px; gap: 6px; }
+  .sb-team { font-size: 19px; }
+  .sb-clock { min-width: 54px; font-size: 13px; }
+}
+
+.center-banner {
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+}
+.center-banner.show { opacity: 1; animation: bannerPop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1); }
+.center-banner span { display: block; font-size: clamp(44px, 12vw, 92px); }
+.center-banner small { display: block; margin-top: 8px; font-size: clamp(14px, 3vw, 22px); font-weight: 600; color: #fff; }
+.center-banner.count span { font-size: clamp(72px, 20vw, 150px); color: #fff; }
+.center-banner.go span { color: var(--accent-mint); }
+.center-banner.overtime span { color: #f7d774; }
+.center-banner.team-0 span { color: #ff8c69; }
+.center-banner.team-1 span { color: #7ec8e3; }
+@keyframes bannerPop { from { transform: translateX(-50%) scale(0.6); } to { transform: translateX(-50%) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .center-banner.show { animation: none; } }
+
+.status-banner.team-0 { color: #ff8c69; border-color: #ff8c69; }
+.status-banner.team-1 { color: #7ec8e3; border-color: #7ec8e3; }
+
+/* three map buttons share the row: tighten them a little */
+.segmented .segment[data-map] { padding-left: 8px; padding-right: 8px; font-size: 13px; }
+
+/* ---------- narrow phones: keep the whole top row on screen ---------- */
+@media (max-width: 400px) {
+  .hud-top { gap: 6px; }
+  .hud-pill { padding: 8px 11px; font-size: 13px; }
+  .scoreboard { padding: 4px 8px; gap: 4px; }
+  .sb-team { font-size: 17px; gap: 4px; padding: 0 2px; }
+  .sb-dot { width: 10px; height: 10px; }
+  .sb-clock { min-width: 44px; font-size: 12px; }
+  .ballcam-btn { padding: 8px 10px; }
+  .hud-icon-btn { padding: 8px 10px; }
+}
+/* the big GOAL!/countdown text sits below the minimap, which lives top-right on touch screens */
+@media (orientation: portrait) { .center-banner { top: 33%; } }
+/* very short landscape phones: a smaller minimap so it clears the DRIFT button */
+@media (max-height: 360px) {
+  body.has-touch .minimap-wrap { transform: scale(0.68); transform-origin: top right; }
+}
+
+/* 320px-wide phones: three map/mode buttons in one row need a little less padding */
+@media (max-width: 340px) {
+  .segmented .segment { padding-left: 5px; padding-right: 5px; font-size: 12px; white-space: nowrap; }
+}

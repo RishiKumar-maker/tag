@@ -1,6 +1,6 @@
 # Adding sounds to Drift Tag Arena
 
-The game has **24 named sound slots** already wired into the code: engine, tyre squeal, every power-up, tags, bumps, menu clicks, music. A slot with no file is simply silent, so you can add sounds one at a time, in any order, and **never need to touch the code**.
+The game has **29 named sound slots** already wired into the code: engine, tyre squeal, every power-up, tags, bumps, Car Soccer (ball hits, goals, kickoff beeps), menu clicks, music. A slot with no file is simply silent, so you can add sounds one at a time, in any order, and **never need to touch the code**.
 
 ## The 5-step version
 
@@ -11,12 +11,12 @@ The game has **24 named sound slots** already wired into the code: engine, tyre 
 5. **Hard-refresh the game** (Ctrl+Shift+R, or clear the cache on mobile) and open the browser console (F12). You'll see a line like:
 
    ```
-   [audio] 3/24 sounds loaded. Not added yet: music_menu, music_game, ...
+   [audio] 3/29 sounds loaded. Not added yet: music_menu, music_game, ...
    ```
 
    That list is your to-do list. If a file you added is in the "not added yet" list, its name is wrong (see [Troubleshooting](#troubleshooting)).
 
-> **Expected noise:** until all 24 are added, the console shows red `404` lines for the missing files. That's normal; those are the empty slots being checked, not errors.
+> **Expected noise:** until all 29 are added, the console shows red `404` lines for the missing files. That's normal; those are the empty slots being checked, not errors.
 
 If you have Node installed, `node tools/check-sounds.mjs` prints every slot with a tick or a dot and points out misspelled files.
 
@@ -33,7 +33,7 @@ If you only add a few, these change the feel the most:
 | `ui_click.mp3` | Makes every menu feel responsive |
 | `music_game.mp3` | Ties the round together |
 
-## All 24 slots
+## All 29 slots
 
 Every file lives in `assets/audio/` and is named exactly as shown.
 
@@ -75,6 +75,13 @@ Every file lives in `assets/audio/` and is named exactly as shown.
 | `bump_car.mp3` | You bump another car | < 0.6 s | Light metal thud |
 | `bump_wall.mp3` | You hit the fence or an obstacle | < 0.6 s | Dull crunch / thump |
 | `drift_charge.mp3` | Your drift sparks level up | < 0.5 s | Rising "ching" |
+| `ball_hit.mp3` | A car hits the ball (louder for harder hits) | < 0.5 s | Solid thump / kick |
+| `ball_wall.mp3` | The ball bounces off a wall | < 0.4 s | Soft boing / thud |
+| `goal_scored.mp3` | A goal is scored | 2–4 s | Stadium horn plus a crowd cheer |
+| `kickoff_beep.mp3` | Each 3, 2, 1 of the kickoff countdown | < 0.3 s | Short clean beep |
+| `overtime.mp3` | The match goes to overtime | 1–2 s | Tense rising sting |
+
+**Car Soccer sounds** (`ball_hit`, `ball_wall`, `goal_scored`, `kickoff_beep`, `overtime`) only play in that mode. `ball_hit` gets louder with harder kicks, and, like the power-up sounds, `ball_hit` and `ball_wall` are positional, so you hear other players' kicks quieter and panned toward where they happen. Good starting points: a dull *thump* for `ball_hit`, a soft rubbery *boing* for `ball_wall`, and an air-horn plus crowd roar for `goal_scored` (it plays for every goal, so keep it under about 3 seconds).
 
 **How the types behave**
 

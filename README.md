@@ -10,13 +10,42 @@ to GitHub Pages.
 - **Space** or **Shift** — drift (hold it while turning)
 - One player creates a room and shares the invite link/code; friends open
   it and join. 2–8 players works best.
-- Two modes: **Classic** (one chaser, tag passes on) and **Infection**
-  (tagged players join the chase, last survivor wins). The host picks the
-  mode each round from the lobby.
-- **Practice Solo**, on the menu screen — drops you straight into the arena
-  alone, no room or second player needed. No timer, no chaser, just the
-  arena and your car. Good for testing drift feel or your connection/specs
-  before inviting anyone.
+- Three modes: **Classic** (one chaser, tag passes on), **Infection**
+  (tagged players join the chase, last survivor wins) and **Car Soccer**
+  (below). The host picks the mode each round from the lobby.
+- **Car Soccer**: two teams (Coral and Sky, assigned at random and kept
+  balanced) drive a big ball into the other team's goal on the Soccer
+  Stadium. Three minutes, then sudden-death overtime if it's level; each
+  goal is followed by a celebration and a 3-2-1 kickoff where everyone
+  returns to their half. Cars are painted in their team colour with a team
+  ring, and a scoreboard shows the score, the clock and which team is
+  yours. There's a **ball cam** (button in the HUD or the `B` key; on by
+  default) that swings the camera to keep the ball in view. Mint **boost
+  pads** around the pitch give a short speed burst and recharge after six
+  seconds. No power-ups or tagging in this mode. The ball rolls on the
+  ground: this is a flat drive-around game, so there are no jumps or
+  aerials. The results screen shows the winning team first, with goals
+  (and own goals) per player. **Practice Solo on the Stadium** is a
+  training pitch: you, the ball and both goals, with goals counted and the
+  ball re-spotted after each.
+- **Three maps.** The host picks one in the lobby (every player loads the
+  host's choice with the round; Car Soccer forces the Stadium):
+  - **Meadow Arena**: a wide-open round field with trees and rocks. Big,
+    sweeping drifts.
+  - **Harbor Yard**: a golden-hour container port, 96 x 68 with a
+    rectangular boundary. Sixteen shipping containers make lanes and tight
+    slots (all at least 4.75 wide) around a central roundabout, with cranes,
+    a moored ship, lamps and barrels for scenery. It's mirror-symmetric, so
+    neither end favours the chaser. Built for cutting corners and flicking
+    drifts through gaps.
+  - **Soccer Stadium**: a floodlit 104 x 64 pitch with rounded corners, a
+    goal at each end (framed in its team's colour), stands with a crowd,
+    floodlight towers and eight boost pads. Home of Car Soccer, but tag
+    modes can be played here too (a big open pitch, no items).
+- **Practice Solo**, on the menu screen, drops you straight into a map of
+  your choice alone, no room or second player needed. No timer, no chaser,
+  just the map and your car. Good for testing drift feel or your
+  connection/specs before inviting anyone.
 - A **How to Play** button on the menu and lobby screens opens an in-game
   reference for controls, tag rules, and what each ability does — so new
   players don't need to read this file to get going.
@@ -69,9 +98,9 @@ to GitHub Pages.
   shockwave ring, twin exhaust flames, a homing missile, a faceted shield
   bubble that blinks before it expires, and the "?" item box.
 
-  Item boxes are just part of the arena's data (`scene.js`), the same way
-  obstacles are, so a future map can simply define a different set — or
-  none at all — without touching any of the ability logic.
+  Item boxes are part of each map's data (a map calls `scene._addItemBox(x, z)`
+  for each one), so a map can define any set, or none at all, without
+  touching the ability logic.
 
 ## How multiplayer works (no backend)
 
@@ -118,6 +147,21 @@ after this:
    their dashboard shows the exact snippet). The free tier is 20GB/month,
    far more than a casual game needs.
 
+### How Car Soccer stays in sync
+
+There's no server, so the **host referees**: it runs the match clock and decides
+goals, and it broadcasts the ball's position and velocity about 15 times a
+second. Every player also runs their own copy of the ball between those
+updates and eases it toward the host's. Your own kicks are applied instantly on
+your screen and reported to the host, so hitting the ball feels immediate
+instead of waiting on a round trip. The host checks a reported kick (your car
+has to be near the ball, the ball has to be where the host sees it, and the
+speed is capped) before adopting it. Like the rest of the game this assumes
+friends: a modified client could cheat, and nothing here tries to stop it.
+
+If the host leaves mid-match the match ends for everyone, since the ball and
+the clock live there.
+
 ## Local testing
 
 Opening `index.html` directly (`file://`) won't work — browsers block ES
@@ -161,7 +205,15 @@ src/
   driftFx.js                skid marks (one instanced mesh), tyre smoke, drift sparks, for every car
   abilities.js              ability registry + hazard/projectile/shockwave simulation and hit detection
   abilityModels.js          loads the ability GLBs; shield + boost-flame visuals (falls back to plain shapes)
-  scene.js                  Three.js scene, chase/drift camera, arena, lighting, item boxes, map registry
+  scene.js                  Three.js scene + shared renderer, chase/drift camera, Meadow Arena, item boxes, map builders
+  maps.js                   map registry (names) + boundary and collision maths for circle and box shapes
+  harborMap.js              builds Harbor Yard: quay, containers, roundabout, cranes, ship, sky
+  harborLayout.js           Harbor Yard's positions as plain data (shared with the tests)
+  stadiumMap.js             builds the Soccer Stadium (canvas-drawn pitch, walls, goals, stands) and the ball model
+  soccerLayout.js           stadium dimensions, teams, kickoff spots, boost pads (plain data)
+  ballPhysics.js            the ball: rolling drag, wall and goal-net bounces, car hits, goal detection (pure)
+  soccerMatch.js            Car Soccer's rules as a state machine: countdown, play, goal, overtime (pure)
+  soccerGame.js             runs a match in the game: ball, referee, host/guest sync, HUD, boost pads, results
   particles.js              smoke, sparks and tag-burst particle pool
   touchControls.js          on-screen buttons + the drag-to-arrange layout editor and its saved layouts
   audio.js                  Web Audio engine: one-shots, positional sounds, engine/drift loops, music, mute
@@ -184,6 +236,8 @@ assets/
 tools/
   make_ability_models.py    regenerates the ability GLBs (Python: trimesh, shapely, mapbox-earcut)
   check-sounds.mjs          lists which sound slots have files; flags misnamed ones (Node)
+  test-maps.mjs             checks Harbor Yard's geometry and the collision helpers (Node, no browser)
+  test-soccer.mjs           checks the ball physics, goals and match rules incl. overtime (Node, no browser)
 ```
 
 ## Adding more cars
@@ -206,11 +260,31 @@ Two ways, both live in `src/carLibrary.js`:
 
 ## Adding a map
 
-`scene.js` has a small registry, `MAP_BUILDERS`. A map is one method that
-fills `this.scene`, `this.colliders` (circles for gameplay collision) and
-`this.itemBoxes`: write `_buildMyMap()`, add `myMap: '_buildMyMap'` to
-`MAP_BUILDERS`, and point a mode at it in `MAP_BY_MODE` in `game.js`.
-Skid marks use multiply blending, so they work on any ground colour.
+1. **Register it** in `MAPS` in `src/maps.js` (id, display name, one-line
+   description). The lobby and menu pickers are the only places that list
+   maps by hand: add a `data-map` button to the `#map-segmented` and
+   `#practice-map-segmented` groups in `index.html`.
+2. **Write a builder**, `buildMyMap(scene)`, and register it in
+   `MAP_BUILDERS` in `src/scene.js`. See `harborMap.js` for a full example.
+   The builder receives the `GameScene` and fills in:
+   - `scene.scene`: the three.js scene (background, fog, lights, props)
+   - `scene.bounds`: `{ shape: 'circle', radius }`, `{ shape: 'rect', halfX, halfZ }`
+     or `{ shape: 'rrect', halfX, halfZ, radius }` (rounded corners)
+   - `scene.colliders`: `{ x, z, radius }` circles or `{ x, z, hx, hz }`
+     axis-aligned boxes. Cars slide along both.
+   - `scene._addItemBox(x, z)`, once per pickup
+   - `scene.spawnPoint = (index, count) => ({ x, z, heading })`
+   - optionally `followHeight`, `followDistance` and `cameraBounds` (keeps the
+     camera inside the walls so one can't hide your car)
+3. **Keep it deterministic**: no `Math.random()` while building, since every
+   player builds their own copy and they must match exactly. Use fixed
+   positions, or the seeded helper the Meadow uses.
+4. Put positions in a plain-data module (like `harborLayout.js`) and copy
+   `tools/test-maps.mjs` to check that nothing overlaps, every pickup and
+   spawn is clear, and the whole map is connected so nobody can be sealed in.
+
+Skid marks use multiply blending, so they work on any ground colour, and the
+minimap draws any bounds shape plus box colliders automatically.
 
 ## Debugging
 
@@ -218,6 +292,7 @@ Skid marks use multiply blending, so they work on any ground colour.
   console (cars, animator values, ability manager).
 - `?touch` forces the on-screen controls on a desktop browser.
 - The console's `[audio]` line says which sound slots still have no file.
+- In Car Soccer, `__game.soccer` exposes the ball (`.ball`) and the match (`.match`).
 
 ## Tuning
 
@@ -235,8 +310,13 @@ Everything gameplay-relevant is centralized so it's easy to nudge:
 ## Known limitations (v1)
 
 - **No host migration.** If the host leaves the lobby, remaining players
-  can't start a new round until everyone jumps into a fresh room. Fine for
+  can't start a new round until everyone jumps into a fresh room. In Car
+  Soccer the match ends immediately, since the host owns the ball. Fine for
   a casual session, worth knowing.
+- **Car Soccer ball feel online.** A guest's own kicks feel instant, but a
+  kick by someone else shows up after the host's update reaches you (about
+  a tenth of a second on a good connection), so balls can nudge slightly
+  as the two copies agree.
 - **No audio files ship with the game.** The sound system is complete but
   the slots are empty until you add your own (`SOUND_GUIDE.md`). The
   console shows harmless `404` lines for each empty slot.
@@ -249,7 +329,8 @@ Everything gameplay-relevant is centralized so it's easy to nudge:
 
 ## Ideas for next steps
 
-- A second map (the registry above is ready for it)
+- A fourth map (the registry and the checks in `tools/test-maps.mjs` are ready for it); ideas: a low-grip frozen lake, a multi-level car park
+- Car Soccer extras: replays after goals, a kickoff boost-meter, more team sizes and a 2v2 / 3v3 chooser, a ball that can pop up off ramps
 - Shrinking-arena power-up
 - A "spectate until next round" view for mid-round joiners
 - Mini-turbo reward for long drifts (the drift charge levels already exist, cosmetic for now)
