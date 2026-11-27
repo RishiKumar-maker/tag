@@ -857,3 +857,143 @@ body.mode-soccer .ballcam-btn { display: inline-flex; align-items: center; }
 @media (max-width: 340px) {
   .segmented .segment { padding-left: 5px; padding-right: 5px; font-size: 12px; white-space: nowrap; }
 }
+
+/* ================= Main menu: console-style layout ================= */
+#screen-menu.active {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 330px);
+  grid-template-rows: auto 1fr auto;
+  gap: 14px 26px;
+  align-items: stretch;
+  justify-content: normal;
+  overflow: hidden;
+  padding: calc(12px + env(safe-area-inset-top)) calc(22px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(22px + env(safe-area-inset-left));
+  font-family: var(--font-display);
+}
+#screen-menu .bg-horizon {
+  background:
+    radial-gradient(120% 40% at 50% 112%, rgba(232, 121, 90, 0.6), transparent 65%),
+    radial-gradient(90% 75% at 50% 42%, #6B3FC0 0%, #3B2A54 55%, #1E1730 100%);
+}
+.menu-rings {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: repeating-radial-gradient(circle at 50% 52%, transparent 0 min(10vw, 110px), rgba(255, 255, 255, 0.08) 0 calc(min(10vw, 110px) + 3px));
+  -webkit-mask-image: radial-gradient(circle at 50% 52%, #000 15%, transparent 72%);
+  mask-image: radial-gradient(circle at 50% 52%, #000 15%, transparent 72%);
+}
+
+/* header: player card + tabs */
+.menu-top { grid-column: 1 / -1; grid-row: 1; position: relative; z-index: 3; display: flex; align-items: flex-start; min-height: 58px; }
+.player-card {
+  display: flex; align-items: center; gap: 10px; width: min(300px, 44vw);
+  padding: 8px 14px 8px 8px; background: var(--accent-mint); color: #1E1730;
+  border: 3px solid #fff; border-radius: 16px; box-shadow: 0 5px 0 rgba(0, 0, 0, 0.2);
+}
+.player-badge {
+  flex: none; width: 42px; height: 42px; display: grid; place-items: center;
+  border-radius: 12px; background: #1E1730; color: var(--accent-coral); font: 700 22px var(--font-display);
+}
+.player-info { min-width: 0; display: flex; flex-direction: column; }
+.name-input {
+  width: 100%; padding: 0; border: 0; outline: 0; background: transparent;
+  color: #1E1730; font: 700 19px/1.2 var(--font-display);
+}
+.name-input::placeholder { color: rgba(30, 23, 48, 0.5); }
+.name-input:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.player-sub { font-size: 12px; font-weight: 500; opacity: 0.65; }
+
+.menu-tabs {
+  position: absolute; left: 50%; top: calc(-12px - env(safe-area-inset-top)); transform: translateX(-50%);
+  display: flex; gap: 6px; padding: calc(12px + env(safe-area-inset-top)) 12px 10px;
+  background: #1E1730; border-radius: 0 0 20px 20px; box-shadow: 0 6px 0 rgba(0, 0, 0, 0.2);
+}
+.menu-tab {
+  padding: 9px 16px; border: 2px solid transparent; border-radius: 12px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font: 600 15px var(--font-display);
+  white-space: nowrap; transition: transform 0.08s, background 0.15s;
+}
+.menu-tab:hover { background: rgba(255, 255, 255, 0.2); }
+.menu-tab:active { transform: scale(0.96); }
+.menu-tab.active { background: var(--accent-coral); border-color: #fff; color: #1E1730; }
+
+/* stage: the car on its podium */
+.stage { grid-column: 1 / -1; grid-row: 2 / 4; position: relative; z-index: 1; min-height: 0; }
+#screen-menu #car-preview-canvas {
+  position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%;
+  border: 0; border-radius: 0; background: none; pointer-events: none;
+}
+.podium { position: absolute; left: 50%; top: 58%; z-index: 1; width: min(34vw, 330px); height: min(26vh, 180px); transform: translateX(-50%); }
+.podium::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 34%; z-index: 2; border-radius: 50%;
+  background: #FFC9A8; box-shadow: inset 0 -5px 0 rgba(0, 0, 0, 0.08);
+}
+.podium::after {
+  content: ""; position: absolute; inset: 17% 0 0; z-index: 1; border-radius: 0 0 50% 50% / 0 0 20% 20%;
+  background: linear-gradient(90deg, #D9694B, #FF8C69 42%, #E8795A 75%, #C85A3D);
+}
+#screen-menu .car-arrow {
+  position: absolute; top: 46%; z-index: 3; width: 54px; height: 54px; display: grid; place-items: center;
+  border: 3px solid #fff; border-radius: 50%; background: #1E1730; color: #fff; font-size: 30px; line-height: 1; cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25);
+}
+#screen-menu .car-arrow:hover { background: var(--accent-coral); color: #1E1730; }
+#screen-menu .car-arrow.prev { left: calc(50% - min(24vw, 270px)); }
+#screen-menu .car-arrow.next { left: calc(50% + min(24vw, 270px) - 54px); }
+#screen-menu .car-name {
+  position: absolute; left: 50%; top: calc(58% + min(26vh, 180px) * 0.55); z-index: 3; transform: translateX(-50%);
+  padding: 4px 18px; border-radius: 999px; background: #1E1730; color: #fff; font: 700 20px var(--font-display); white-space: nowrap;
+}
+.garage-note { display: none; position: absolute; left: 0; right: 0; top: 4%; z-index: 3; margin: 0; text-align: center; color: var(--text-primary); font-weight: 500; }
+#screen-menu[data-view="garage"] .garage-note { display: block; }
+#screen-menu[data-view="garage"] .side-col { display: none; }
+
+/* right column: cards + the big button */
+.side-col { grid-column: 2; grid-row: 2; align-self: start; z-index: 3; display: flex; flex-direction: column; gap: 14px; }
+.menu-panel {
+  background: rgba(30, 23, 48, 0.78); border: 3px solid #fff; border-radius: 16px; overflow: hidden;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.2);
+}
+.menu-panel h2 { margin: 0; padding: 7px 14px; background: var(--accent-mint); color: #1E1730; font: 700 17px var(--font-display); text-align: center; }
+.panel-body { padding: 12px; }
+.panel-body .join-row { display: flex; gap: 8px; }
+.panel-body .code-input { flex: 1; min-width: 0; }
+.panel-body .hint { margin: 6px 0 0; min-height: 0; }
+.panel-body .hint:empty { display: none; }
+.panel-body .practice-map { margin: 0 0 10px; }
+.play-col { grid-column: 2; grid-row: 3; align-self: end; z-index: 3; }
+.play-btn {
+  width: 100%; padding: 14px 18px 12px; border: 3px solid #fff; border-radius: 18px; cursor: pointer;
+  background: linear-gradient(#FFB36B, #FF8C69); color: #2A1636; text-align: center;
+  font: 700 clamp(26px, 3.4vw, 36px)/1 var(--font-display);
+  box-shadow: 0 6px 0 #B5482E, 0 14px 26px rgba(0, 0, 0, 0.3); transition: transform 0.08s, box-shadow 0.08s;
+}
+.play-btn small { display: block; margin-top: 5px; font: 600 14px var(--font-display); opacity: 0.7; }
+.play-btn:hover { filter: brightness(1.06); }
+.play-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #B5482E, 0 8px 16px rgba(0, 0, 0, 0.3); }
+
+/* bottom-left: the game's name */
+.menu-foot { grid-column: 1; grid-row: 3; align-self: end; z-index: 3; }
+.menu-foot .logo { margin: 0; font: 700 clamp(30px, 4vw, 46px)/1 var(--font-display); text-shadow: 0 4px 0 rgba(0, 0, 0, 0.25); text-align: left; }
+.menu-note { margin: 6px 0 0; font-size: 13px; color: var(--text-primary); opacity: 0.75; }
+
+/* short landscape screens (phones on their side) */
+@media (max-height: 560px) {
+  #screen-menu.active { gap: 8px 18px; }
+  .panel-body { padding: 8px; }
+  .menu-panel h2 { padding: 4px 10px; font-size: 15px; }
+  .side-col { gap: 8px; }
+  .play-btn { padding: 8px 14px; font-size: 24px; }
+  .play-btn small, .menu-note { display: none; }
+  .menu-tab { padding: 7px 12px; font-size: 14px; }
+}
+/* portrait phones: one column, scrolls */
+@media (max-width: 760px) and (orientation: portrait) {
+  #screen-menu.active { grid-template-columns: 1fr; grid-template-rows: auto 40vh auto auto auto; overflow-y: auto; gap: 14px; }
+  .menu-tabs { position: static; transform: none; margin: 0 0 0 auto; padding: 8px; border-radius: 16px; }
+  .menu-tab { padding: 8px 10px; font-size: 13px; }
+  .player-card { width: auto; flex: 1; margin-right: 8px; }
+  .stage { grid-column: 1; grid-row: 2; }
+  .side-col, .play-col, .menu-foot { grid-column: 1; }
+  .side-col { grid-row: 3; } .play-col { grid-row: 4; } .menu-foot { grid-row: 5; align-self: start; }
+  .podium { width: 60vw; }
+}

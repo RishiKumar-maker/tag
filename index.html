@@ -16,49 +16,67 @@
 <button id="btn-sound" class="sound-btn sound-btn-floating" type="button" aria-label="Mute or unmute sound">&#128266;</button>
 
 <!-- MENU -->
-<section id="screen-menu" class="screen active">
+<section id="screen-menu" class="screen active" data-view="home">
   <div class="bg-horizon" aria-hidden="true"></div>
-  <div class="glass-card menu-card">
-    <div class="drift-arc" aria-hidden="true"></div>
-    <h1 class="logo">Drift Tag <span>Arena</span></h1>
-    <p class="tagline">Cozy low-poly car tag. Drift in, don't get caught.</p>
+  <div class="menu-rings" aria-hidden="true"></div>
 
-    <label class="field-label" for="input-name">Your name</label>
-    <input id="input-name" class="text-input" type="text" maxlength="16" placeholder="Racer" autocomplete="off">
-
-    <div class="car-picker">
-      <span class="field-label">Your car</span>
-      <div class="car-preview-frame">
-        <button id="btn-car-prev" class="car-arrow" type="button" aria-label="Previous car">&lsaquo;</button>
-        <canvas id="car-preview-canvas"></canvas>
-        <button id="btn-car-next" class="car-arrow" type="button" aria-label="Next car">&rsaquo;</button>
-      </div>
-      <div class="car-name" id="car-name">Roadster</div>
-    </div>
-
-    <div class="menu-actions">
-      <button id="btn-create" class="btn btn-primary">Create Room</button>
-
-      <div class="join-row">
-        <input id="input-room-code" class="text-input code-input" type="text" maxlength="5" placeholder="CODE" autocomplete="off">
-        <button id="btn-join" class="btn btn-secondary">Join</button>
+  <header class="menu-top">
+    <div class="player-card">
+      <div class="player-badge" id="player-badge" aria-hidden="true">R</div>
+      <div class="player-info">
+        <input id="input-name" class="name-input" type="text" maxlength="16" placeholder="Racer" autocomplete="off" aria-label="Your name">
+        <span class="player-sub">Your racer name</span>
       </div>
     </div>
+    <nav class="menu-tabs" aria-label="Menu">
+      <button class="menu-tab active" type="button" data-tab="home">Home</button>
+      <button class="menu-tab" type="button" data-tab="garage">Garage</button>
+      <button class="menu-tab" id="btn-how-to-play" type="button">How to Play</button>
+      <button class="menu-tab touch-only" id="btn-edit-controls" type="button">Controls</button>
+    </nav>
+  </header>
 
-    <div class="menu-divider"><span>or</span></div>
-    <div class="segmented practice-map" id="practice-map-segmented" role="group" aria-label="Practice map">
-      <button class="segment active" data-map="arena" type="button">Meadow</button>
-      <button class="segment" data-map="harbor" type="button">Harbor</button>
-      <button class="segment" data-map="stadium" type="button">Stadium</button>
-    </div>
-    <button id="btn-practice" class="btn btn-ghost btn-wide" type="button">Practice Solo</button>
-    <p class="hint">Try the drift controls and maps on your own — no other players needed.</p>
-
-    <button id="btn-how-to-play" class="btn btn-ghost btn-small" type="button">How to Play</button>
-    <button id="btn-edit-controls" class="btn btn-ghost btn-small touch-only" type="button">Edit controls</button>
-    <p class="hint" id="menu-hint"></p>
+  <div class="stage">
+    <div class="podium" aria-hidden="true"></div>
+    <canvas id="car-preview-canvas"></canvas>
+    <button id="btn-car-prev" class="car-arrow prev" type="button" aria-label="Previous car">&lsaquo;</button>
+    <button id="btn-car-next" class="car-arrow next" type="button" aria-label="Next car">&rsaquo;</button>
+    <div class="car-name" id="car-name">Roadster</div>
+    <p class="garage-note">Your car carries into every room and into practice.</p>
   </div>
-  <p class="footnote">Best with a keyboard · Share a room link to play with friends</p>
+
+  <aside class="side-col">
+    <section class="menu-panel">
+      <h2>Join Friends</h2>
+      <div class="panel-body">
+        <div class="join-row">
+          <input id="input-room-code" class="text-input code-input" type="text" maxlength="5" placeholder="CODE" autocomplete="off" aria-label="Room code">
+          <button id="btn-join" class="btn btn-secondary" type="button">Join</button>
+        </div>
+        <p class="hint" id="menu-hint"></p>
+      </div>
+    </section>
+    <section class="menu-panel">
+      <h2>Practice Solo</h2>
+      <div class="panel-body">
+        <div class="segmented practice-map" id="practice-map-segmented" role="group" aria-label="Practice map">
+          <button class="segment active" data-map="arena" type="button">Meadow</button>
+          <button class="segment" data-map="harbor" type="button">Harbor</button>
+          <button class="segment" data-map="stadium" type="button">Stadium</button>
+        </div>
+        <button id="btn-practice" class="btn btn-secondary btn-wide" type="button">Drive alone</button>
+      </div>
+    </section>
+  </aside>
+
+  <div class="play-col">
+    <button id="btn-create" class="play-btn" type="button">Create Room<small>Host a game for friends</small></button>
+  </div>
+
+  <footer class="menu-foot">
+    <h1 class="logo">Drift Tag <span>Arena</span></h1>
+    <p class="menu-note">Cozy low-poly car tag. Best with a keyboard.</p>
+  </footer>
 </section>
 
 <!-- LOBBY -->
