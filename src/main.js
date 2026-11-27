@@ -190,6 +190,20 @@ if (prefillRoom) {
   nameInput.focus()
 }
 
+// menu tabs (Home / Garage) and the avatar badge
+const menuEl = document.getElementById('screen-menu')
+const menuTabs = [...menuEl.querySelectorAll('[data-tab]')]
+function setTab(name) {
+  menuTabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === name))
+  menuEl.dataset.view = name
+  window.dispatchEvent(new Event('resize')) // the car preview re-measures its canvas
+}
+menuTabs.forEach((t) => t.addEventListener('click', () => setTab(t.dataset.tab)))
+const badgeEl = document.getElementById('player-badge')
+const syncBadge = () => { badgeEl.textContent = (nameInput.value.trim()[0] || 'R').toUpperCase() }
+nameInput.addEventListener('input', syncBadge)
+syncBadge()
+
 // ---------------- lobby screen ----------------
 document.getElementById('btn-copy-link').addEventListener('click', async () => {
   const url = `${location.origin}${location.pathname}?room=${game.roomCode}`
